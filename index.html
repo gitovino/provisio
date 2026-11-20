@@ -288,7 +288,7 @@ button.sync{background:none;border:0;padding:4px 6px;font:inherit;font-size:12px
     <div class="brand" data-glean-id="brand"><b class="wordmark" contenteditable>Provisio</b></div>
     <button type="button" class="scan-cta" data-act="go" data-view="scanner" data-pmode="barcode">📷 Scannen</button>
     <nav id="nav-side"></nav>
-    <div class="side-foot" contenteditable>Gegevens worden automatisch opgeslagen.</div>
+    <div class="side-foot"><span contenteditable>Gegevens worden automatisch opgeslagen.</span><br><span id="app-ver" class="mono"></span></div>
   </aside>
   <div class="main">
     <header class="top" data-glean-id="topbar">
@@ -1666,10 +1666,11 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
+const APP_VERSION='1.6 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
-  return reach?'Google is bereikbaar, maar weigert de app. Zet bij Implementeren › Implementaties beheren › ✎ "Wie heeft toegang" op "Iedereen" (niet "Iedereen met een Google-account"), kies Versie: Nieuwe versie en klik op Implementeren. Gebruik de URL die eindigt op /exec.'
+  return reach?'Google is bereikbaar, maar weigert de app. Tik op "Adres uit koppelcode testen" om te zien wat Google antwoordt. Meestal: zet bij Implementeren › Implementaties beheren › ✎ "Uitvoeren als" op "Ik" en "Wie heeft toegang" op "Iedereen" (niet "Iedereen met een Google-account"). Of het adres in de koppelcode is verouderd: plak de /exec-URL bij WEB_APP_URL in Code.gs en haal een nieuwe koppelcode op.'
     :'Kan Google niet bereiken. Iets blokkeert de verbinding met script.google.com: een adblocker of privacy-extensie, een bedrijfsnetwerk of VPN. Probeer een ander netwerk (bv. mobiele data) of zet de extensie uit voor deze site.'}
 const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fails:0,lastOk:null,info:null,orig:null,pending:null,_t:null,_ot:null,_poll:null,
   attach(ad){const self=this;this.orig={put:ad.put.bind(ad),del:ad.del.bind(ad)};
@@ -1728,10 +1729,10 @@ const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fail
   unpair(){this.cfg=null;this.outbox={};this.pending=null;this.err='';this.saveCfg();this.saveOutbox(true);LS.set('syncInfo',null);this.info=null;updateSync()}};
 
 /* ---------- Instellingen › Google-synchronisatie ---------- */
-function syncPanel(){const c=Sync.cfg,st=M.settings(),r=st.reminders;let h='';
+function syncPanel(){const c=Sync.cfg,st=M.settings(),r=st.reminders;let h='<div class="small muted" data-glean-id="app-version" style="margin-bottom:8px">Provisio versie '+APP_VERSION+'</div>';
   if(!c){h+='<div class="section"><h3>Koppelen met je Google-account</h3><p class="muted small" style="margin-top:0">Houd je voorraad gelijk op je telefoon en in de web-app, en krijg elke ochtend een mail met wat vervalt en wat je moet kopen. Je gegevens staan in een Google Sheet in je eigen Google-account. Installeer eerst het script volgens de installatiegids.</p>'+
       (Store.mode==='yjs'?'<div class="note warn">Je gebruikt de app nu in Glean. Koppel bij voorkeur de web-app of de Android-app; in Glean kunnen verbindingen naar Google geblokkeerd zijn.</div>':'')+
-      '<div class="field"><label for="sync-code">Koppelcode</label><textarea id="sync-code" class="inp" style="min-height:90px;font-family:ui-monospace,monospace;font-size:12px" placeholder="SVB1:…" autocomplete="off" spellcheck="false"></textarea><div class="hint">In je Google Sheet: menu Voorraadbeheer › Koppelcode tonen, of › Koppelcode naar mijn mail sturen.</div></div>'+
+      '<div class="field"><label for="sync-code">Koppelcode</label><textarea id="sync-code" class="inp" style="min-height:90px;font-family:ui-monospace,monospace;font-size:12px" placeholder="SVB1:…" autocomplete="off" spellcheck="false"></textarea><div class="hint">In je Google Sheet: menu Provisio › Koppelcode tonen, of › Koppelcode naar mijn mail sturen.</div><div class="row" style="margin-top:6px"><button type="button" class="btn sm" data-act="syncTestUrl">🔎 Adres uit koppelcode testen</button></div><div id="sync-url" class="small" style="margin-top:6px;word-break:break-all"></div></div>'+
       '<div class="field"><label for="sync-name">Naam van dit toestel</label><input id="sync-name" class="inp" style="max-width:260px" value="'+esc(defaultDeviceName())+'"></div>'+
       '<button type="button" class="btn primary" data-act="syncPair">Koppelen</button></div>';
     return h}
@@ -1753,6 +1754,9 @@ function syncPanel(){const c=Sync.cfg,st=M.settings(),r=st.reminders;let h='';
     '<div class="hint" style="margin-top:6px">'+(info.lastMail?'Laatste mail: '+esc(info.lastMail)+'. ':'')+'Wijzigingen hier gelden na de volgende synchronisatie. Het e-mailadres pas je aan bovenaan in Code.gs.</div></div>';
   return h}
 
+A.syncTestUrl=()=>{const box=$('#sync-url');let c;try{c=parsePairCode($('#sync-code').value)}catch(e){box.innerHTML='<span class="warn-txt">'+esc(e.message)+'</span>';return}
+  box.innerHTML='Adres in deze koppelcode:<br><span class="mono">'+esc(c.url)+'</span><br><span class="muted">Vergelijk met de web-app-URL bij Implementeren › Implementaties beheren. Het adres opent in een nieuw tabblad: zie je “Provisio — synchronisatie actief”, dan is het goed. Zie je een lijst met functies met bovenaan “Provisio (version …)”, dan is het een bibliotheek in plaats van een web-app. Zie je een aanmeldpagina of een foutmelding, volg dan de stappen in de installatiegids.</span>';
+  try{window.open(c.url,'_blank','noopener')}catch(e){}};
 A.syncPair=async()=>{const code=$('#sync-code').value,name=$('#sync-name').value;toast('Verbinden met Google…');const mode=await Sync.pair(code,name);
   if(mode==='ask'){const pd=Sync.pending;openModal({title:'Er staan al gegevens in Google',gid:'dialog-sync-choice',
     body:'<p style="margin-top:0">Je Google Sheet bevat al gegevens ('+pd.count+' records), bijvoorbeeld van je andere toestel. Ook op dit toestel staat een voorraad. Wat wil je doen?</p><div class="stack">'+
@@ -1885,7 +1889,7 @@ A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
 const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h='';if(!M.products().length)h='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button><button type="button" class="btn lg" data-act="loadDemo">Voorbeelddata laden</button></div></div>';return h+_dash()};
-function start(){M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
+function start(){try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
 async function boot(){const collab=window.GleanBridge&&window.GleanBridge.collaboration;
