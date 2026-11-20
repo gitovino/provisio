@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6f5e">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var t='auto';try{t=JSON.parse(localStorage.getItem('svb:theme'))||'auto'}catch(e){}var d=t==='dark'||(t!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')})();</script>
 <meta name="glean-artifact-type" content="dashboards">
 <meta name="glean-artifact-type" content="tracker_tables">
 <title>Provisio</title>
@@ -27,6 +29,7 @@ html[data-theme='dark']{
   --artifact-expired:#ff6b6b;--artifact-red:#ff8455;--artifact-orange:#ffab4a;--artifact-yellow:#e8c547;--artifact-ok:#5fd69a;--artifact-info:#8eaaff;
   --artifact-overlay:rgba(0,0,0,.6);--artifact-shadow:0 10px 30px rgba(0,0,0,.5);
 }
+html{color-scheme:light}html[data-theme='dark']{color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{background:var(--artifact-background);color:var(--artifact-text-primary);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -1666,7 +1669,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='1.6 · 21-11-2026';
+const APP_VERSION='1.7 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -1777,7 +1780,7 @@ const SET_TABS=[['algemeen','Huishouden'],['houdbaarheid','Houdbaarheid'],['meld
 VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.settingsTab=tab;const st=M.settings();
   let h='<div class="tabs" role="tablist">'+SET_TABS.map(t=>'<button type="button" class="tab" role="tab" id="stab-'+t[0]+'" aria-controls="spanel-'+t[0]+'" aria-selected="'+(tab===t[0])+'" data-act="setTab" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div role="tabpanel" id="spanel-'+tab+'" aria-labelledby="stab-'+tab+'" data-glean-id="set-'+tab+'" style="max-width:860px">';
   const num=(path,v,min,max)=>'<input class="inp" type="number" min="'+min+'" max="'+max+'" value="'+esc(v)+'" data-change="setNum" data-path="'+path+'" style="max-width:120px">';
-  if(tab==='algemeen'){h+='<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
+  if(tab==='algemeen'){h+=themeSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
     h+='<div class="section"><h3>Gebruikers</h3><p class="muted small" style="margin-top:0">Iedere handeling in de geschiedenis wordt bewaard met de naam van de gebruiker. '+(Store.mode==='yjs'?'Je gebruikt de gedeelde Glean-opslag: iedereen met wie je deze app deelt, ziet en bewerkt dezelfde voorraad in realtime.':'De gegevens staan op dit toestel. Wil je met meerdere toestellen tegelijk werken, open de app dan via Glean (gedeeld) of zet een back-up over.')+'</p><div class="row">'+st.users.map(u=>'<span class="chip" aria-pressed="'+(u===M.getUser())+'">'+esc(u)+(st.users.length>1?' <a href="#" data-act="delUser" data-u="'+esc(u)+'" aria-label="Verwijder '+esc(u)+'">✕</a>':'')+'</span>').join('')+'</div><div class="row" style="margin-top:10px"><input id="new-user" class="inp" style="max-width:220px" placeholder="Naam gezinslid" data-enter="addUser"><button type="button" class="btn" data-act="addUser">Toevoegen</button></div></div>'}
   if(tab==='gezondheid')h+=healthSettings(st);
   if(tab==='houdbaarheid'){const t=st.thresholds;h+='<div class="section"><h3>Waarschuwingstermijnen</h3><div class="stack"><div class="row"><span class="tag lv-expired" style="width:140px">Vervallen</span><span class="muted small">datum voorbij</span></div><div class="row"><span class="tag lv-red" style="width:140px">Rood/oranje</span>0 tot '+num('thresholds.red',t.red,0,30)+' dagen</div><div class="row"><span class="tag lv-orange" style="width:140px">Oranje</span>tot '+num('thresholds.orange',t.orange,1,60)+' dagen</div><div class="row"><span class="tag lv-yellow" style="width:140px">Geel</span>tot '+num('thresholds.yellow',t.yellow,1,120)+' dagen</div><div class="row"><span class="tag lv-ok" style="width:140px">Normaal</span><span class="muted small">daarna</span></div></div></div>';
@@ -1811,6 +1814,14 @@ VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.s
 A.setTab=d=>{UI.settingsTab=d.tab;go('instellingen',{tab:d.tab})};
 function setPath(path,val){const parts=path.split('.');const patch={};let o=patch;parts.forEach((p,i)=>{if(i===parts.length-1)o[p]=val;else{o[p]={};o=o[p]}});M.saveSettings(patch)}
 A.setNum=(d,el)=>{const v=Number(el.value);if(!isFinite(v))return;if(d.path.startsWith('thresholds')){const t=Object.assign({},M.settings().thresholds);t[d.path.split('.')[1]]=v;if(!(t.red<t.orange&&t.orange<t.yellow)){toast('Termijnen moeten oplopen: rood < oranje < geel.','error');render();return}}setPath(d.path,v);toast('Opgeslagen.')};
+const Theme={opts:[['auto','Automatisch'],['light','Licht'],['dark','Donker']],
+  get(){const t=LS.get('theme','auto');return t==='light'||t==='dark'?t:'auto'},
+  isDark(t){t=t||Theme.get();return t==='dark'||(t==='auto'&&!!(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))},
+  apply(){const d=Theme.isDark();document.documentElement.setAttribute('data-theme',d?'dark':'light');const m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',d?'#0d110f':'#2f6f5e')},
+  set(t){LS.set('theme',t);Theme.apply()},
+  watch(){try{const q=matchMedia('(prefers-color-scheme: dark)');const f=()=>{if(Theme.get()==='auto')Theme.apply()};q.addEventListener?q.addEventListener('change',f):q.addListener(f)}catch(e){}}};
+function themeSection(){const cur=Theme.get();return '<div class="section" data-glean-id="settings-theme"><h3>Weergave</h3><div class="seg" role="group" aria-label="Thema">'+Theme.opts.map(o=>'<button type="button" data-act="setTheme" data-t="'+o[0]+'" aria-pressed="'+(cur===o[0])+'">'+o[1]+'</button>').join('')+'</div><div class="hint" style="margin-top:6px">Automatisch volgt de instelling van je toestel (licht overdag, donker als je toestel in donkere modus staat). De keuze geldt per toestel.</div></div>'}
+A.setTheme=d=>{Theme.set(d.t);render();toast('Weergave: '+(Theme.opts.find(o=>o[0]===d.t)||[,''])[1].toLowerCase()+'.')};
 A.setStr=(d,el)=>{setPath(d.path,el.value);toast('Opgeslagen.')};A.setBool=(d,el)=>setPath(d.path,el.checked);
 A.addUser=()=>{const v=$('#new-user').value.trim();if(!v)return;const u=M.settings().users.slice();if(u.includes(v))throw new Error('Deze gebruiker bestaat al.');u.push(v);M.saveSettings({users:u})};
 A.delUser=d=>{const u=M.settings().users.filter(x=>x!==d.u);M.saveSettings({users:u});if(M.getUser()===d.u)setUser(u[0])};
@@ -1889,7 +1900,7 @@ A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
 const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h='';if(!M.products().length)h='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button><button type="button" class="btn lg" data-act="loadDemo">Voorbeelddata laden</button></div></div>';return h+_dash()};
-function start(){try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
+function start(){try{Theme.apply();Theme.watch()}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
 async function boot(){const collab=window.GleanBridge&&window.GleanBridge.collaboration;
