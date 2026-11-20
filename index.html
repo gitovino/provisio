@@ -224,7 +224,7 @@ table.t td{padding:8px;border-bottom:1px solid var(--artifact-border-light);vert
 .mode[aria-pressed="true"]{border-color:var(--artifact-primary-brand);background:var(--artifact-selected);color:var(--artifact-text-primary)}
 .cam{position:relative;border-radius:12px;overflow:hidden;background:var(--artifact-background-mid);color:var(--artifact-text-primary);aspect-ratio:4/3;max-height:58vh;width:100%;display:flex;align-items:center;justify-content:center}
 .cam video,.cam img{width:100%;height:100%;object-fit:cover}
-.cam .reticle{position:absolute;left:12%;right:12%;top:32%;bottom:32%;border:2px solid var(--artifact-on-brand);border-radius:10px;pointer-events:none;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+.cam .reticle{position:absolute;left:14%;right:14%;top:20%;bottom:20%;border:2px solid var(--artifact-on-brand);border-radius:10px;pointer-events:none;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
 .cam .cam-msg{position:absolute;bottom:10px;left:10px;right:10px;text-align:center;font-size:13px;padding:6px 10px;border-radius:8px;background:var(--artifact-overlay);color:var(--artifact-on-brand)}
 .progress{height:8px;border-radius:5px;background:var(--artifact-background-mid);overflow:hidden}.progress i{display:block;height:100%;background:var(--artifact-primary-brand);transition:width .2s}
 .session{display:flex;flex-direction:column;gap:6px}
@@ -784,6 +784,37 @@ function buildXLSX(sheets){const X='<?xml version="1.0" encoding="UTF-8" standal
     {name:'xl/styles.xml',data:X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>'}];
   sheets.forEach((s,i)=>files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml',data:sheetXml(s.rows)}));return zipStore(files)}
 
+/* ---------- QR-codes en GS1 (Digital Link, element strings) ---------- */
+const GS1_FIXED={'00':18,'01':14,'02':14,'03':14,'11':6,'12':6,'13':6,'15':6,'16':6,'17':6,'20':2};
+function gs1Date(s){if(!/^\d{6}$/.test(s))return '';let y=2000+Number(s.slice(0,2)),m=Number(s.slice(2,4)),d=Number(s.slice(4,6));if(m<1||m>12)return '';
+  const last=new Date(Date.UTC(y,m,0)).getUTCDate();if(d===0)d=last;if(d>last)return '';return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0')}
+function gtinToEan(g){g=String(g||'').replace(/\D/g,'');if(!g)return '';if(g.length===14&&g.startsWith('000000'))return g.slice(6);if(g.length===14&&g[0]==='0')return g.slice(1);return g}
+function gs1Fields(ai){const o={};const g=ai['01']||ai['02'];if(g){o.gtin=g;o.code=gtinToEan(g)}
+  if(ai['17']){o.expiryDate=gs1Date(ai['17']);o.dateType='TGT'}else if(ai['15']){o.expiryDate=gs1Date(ai['15']);o.dateType='THT'}else if(ai['16']){o.expiryDate=gs1Date(ai['16']);o.dateType='THT'}
+  if(!o.expiryDate){delete o.expiryDate;delete o.dateType}if(ai['10'])o.batch=String(ai['10']).slice(0,40);return o}
+function parseGs1Elements(s){s=String(s).replace(/^\](?:C1|e0|d2|Q3|J1)/,'');const ai={};
+  if(/^\(\d{2,4}\)/.test(s)){const re=/\((\d{2,4})\)([^(]*)/g;let m;while((m=re.exec(s)))ai[m[1]]=m[2].replace(/\x1d/g,'').trim();return ai['01']||ai['02']?ai:null}
+  let i=0;const GS='\x1d';
+  while(i<s.length){if(s[i]===GS){i++;continue}const two=s.slice(i,i+2);if(!/^\d\d$/.test(two))return null;
+    if(GS1_FIXED[two]){const v=s.slice(i+2,i+2+GS1_FIXED[two]);if(v.length<GS1_FIXED[two]||!/^\d+$/.test(v))return null;ai[two]=v;i+=2+GS1_FIXED[two];continue}
+    if(/^3[1-6]\d\d$/.test(s.slice(i,i+4))){const v=s.slice(i+4,i+10);if(!/^\d{6}$/.test(v))return null;ai[s.slice(i,i+4)]=v;i+=10;continue}
+    const k=['10','21','22','30','37','240','241','250','251','400','410','420','8020'].sort((a,b)=>b.length-a.length).find(x=>s.startsWith(x,i));if(!k)return null;
+    let j=s.indexOf(GS,i+k.length);if(j<0)j=s.length;ai[k]=s.slice(i+k.length,j);i=j}
+  return ai['01']||ai['02']?ai:null}
+function parseDigitalLink(raw){const m=String(raw).match(/^https?:\/\/[^/?#]+([^?#]*)(?:\?([^#]*))?/i);if(!m)return null;
+  const dec=x=>{try{return decodeURIComponent(x.replace(/\+/g,' '))}catch(e){return x}};
+  const seg=m[1].split('/').filter(Boolean).map(dec);const ai={};
+  const k=seg.findIndex((x,ix)=>(x==='01'||x==='gtin')&&/^\d{8,14}$/.test(seg[ix+1]||''));if(k<0)return null;
+  for(let i=k;i+1<seg.length;i+=2){const key=seg[i]==='gtin'?'01':seg[i]==='lot'?'10':seg[i]==='ser'?'21':seg[i];ai[key]=seg[i+1]}
+  (m[2]||'').split('&').filter(Boolean).forEach(p=>{const q=p.indexOf('=');const key=dec(q<0?p:p.slice(0,q)),v=q<0?'':dec(p.slice(q+1));if(/^\d{2,4}$/.test(key)&&!(key in ai))ai[key]=v;if(key==='exp'&&!ai['17'])ai['17']=v});
+  if(ai['01']&&ai['01'].length<14)ai['01']=ai['01'].padStart(14,'0');return ai}
+function parseScan(raw){const s=String(raw==null?'':raw).trim();if(!s)return {kind:'empty',raw:s};
+  if(/^\d+$/.test(s)&&s.length<=14)return {kind:'barcode',code:s,raw:s};
+  if(/^https?:\/\//i.test(s)||/^www\./i.test(s)){const ai=parseDigitalLink(/^www\./i.test(s)?'https://'+s:s);if(ai&&ai['01'])return Object.assign({kind:'gs1',raw:s,url:s},gs1Fields(ai));return {kind:'url',raw:s,url:s}}
+  const ai=parseGs1Elements(s);if(ai){const f=gs1Fields(ai);if(f.code&&validEAN(ai['01']||ai['02']))return Object.assign({kind:'gs1',raw:s},f)}
+  if(/\s/.test(s)||s.length>48)return {kind:'text',raw:s};
+  return {kind:'barcode',code:s,raw:s}}
+
 /* ---------- Gezondheid ----------
    Score volgens de openbare Yuka-methode (60% voeding/Nutri-Score, 30% additieven, 10% bio), automatisch berekend met open data van Open Food Facts.
    Dit is GEEN officiële Yuka-score: Yuka heeft geen openbare API, scrapen is verboden, en hun omrekentabel en additievenbeoordeling zijn niet openbaar. */
@@ -866,39 +897,6 @@ function parseAdditiveTaxonomy(tax){const out={};const map={'en:high':'matig','e
   Object.keys(tax||{}).forEach(k=>{const t=tax[k]||{};const c=addCode(k);if(!/^e\d/.test(c))return;const rr=t.efsa_evaluation_overexposure_risk&&t.efsa_evaluation_overexposure_risk.en;const nm=t.name&&(t.name.nl||t.name.en)||'';
     const o={};if(rr&&map[rr])o.r=map[rr];if(nm)o.n=nm.replace(/^E\d+[a-z]*\s*-\s*/i,'');if(o.r||o.n)out[c]=o});
   if(out.e171)out.e171.r='hoog';return out}
-
-/* ---------- Voorbeelddata (optioneel te laden via Instellingen) ---------- */
-function seedDemo(M){const t=todayStr();const P=d=>M.saveProduct(d);
-  M.tx(()=>{
-  const g=P({name:'Rundergehakt',brand:'Slager',category:'Vlees, vis en gevogelte',sub:'Gehakt',unit:'g'});
-  [0,1].forEach(()=>M.addLot({productId:g.id,locationId:'loc-dv-keuken',qty:500,unit:'g',purchaseDate:addDays(t,-20),freezeDate:addDays(t,-20),dateType:'EIGEN',expiryDate:addMonths(addDays(t,-20),3)}));
-  const kip=P({name:'Kipfilet',brand:'Delhaize',category:'Vlees, vis en gevogelte',sub:'Kip',unit:'g'});M.addLot({productId:kip.id,locationId:'loc-koelkast',qty:400,unit:'g',dateType:'TGT',expiryDate:addDays(t,2)});
-  const sp=P({name:'Spaghetti',brand:'Barilla',category:'Droge voeding',sub:'Pasta',unit:'verpakkingen',packSize:500,packUnit:'g',minStock:2,barcode:'8076800195057'});M.addLot({productId:sp.id,locationId:'loc-voorraad',qty:2,unit:'verpakkingen',dateType:'THT',expiryDate:addDays(t,240)});
-  const tp=P({name:'Tomatenpuree',brand:'Boni',category:'Conserven en sauzen',sub:'Tomatenproducten',unit:'stuks',packSize:70,packUnit:'g',minStock:1});M.addLot({productId:tp.id,locationId:'loc-gootsteen',qty:1,unit:'stuks',dateType:'THT',expiryDate:addDays(t,300)});
-  const pa=P({name:'Passata',brand:'Mutti',category:'Conserven en sauzen',sub:'Tomatenproducten',unit:'g',minStock:500});M.addLot({productId:pa.id,locationId:'loc-gootsteen',qty:700,unit:'g',dateType:'THT',expiryDate:addDays(t,400)});
-  const me=P({name:'Halfvolle melk',brand:'Inza',category:'Koeling',sub:'Zuivel',unit:'l',minStock:1,openShelfDays:4});M.addLot({productId:me.id,locationId:'loc-koelkast',qty:0.5,unit:'l',dateType:'THT',expiryDate:addDays(t,9),opened:true,openedDate:addDays(t,-1)});
-  const ei=P({name:'Eieren',brand:'Boni',category:'Koeling',sub:'Eieren',unit:'stuks',minStock:6});M.addLot({productId:ei.id,locationId:'loc-koelkast',qty:4,unit:'stuks',dateType:'THT',expiryDate:addDays(t,12)});
-  const yo=P({name:'Griekse yoghurt',brand:'Danone',category:'Koeling',sub:'Zuivel',unit:'g'});M.addLot({productId:yo.id,locationId:'loc-koelkast',qty:500,unit:'g',dateType:'TGT',expiryDate:addDays(t,1)});
-  const ka=P({name:'Geraspte kaas',brand:'Everyday',category:'Koeling',sub:'Kaas',unit:'g'});M.addLot({productId:ka.id,locationId:'loc-koelkast',qty:150,unit:'g',dateType:'THT',expiryDate:addDays(t,6)});
-  const he=P({name:'Gekookte hesp',brand:'Herta',category:'Koeling',sub:'Vleeswaren',unit:'g'});M.addLot({productId:he.id,locationId:'loc-koelkast',qty:120,unit:'g',dateType:'TGT',expiryDate:addDays(t,-1)});
-  const wo=P({name:'Wortelen',category:'Groenten en fruit',sub:'Verse groenten',unit:'g'});M.addLot({productId:wo.id,locationId:'loc-koelkast',qty:600,unit:'g',dateType:'EIGEN',expiryDate:addDays(t,9)});
-  const ui=P({name:'Uien',category:'Groenten en fruit',sub:'Verse groenten',unit:'stuks',minStock:2});M.addLot({productId:ui.id,locationId:'loc-voorraad',qty:5,unit:'stuks',dateType:'EIGEN',expiryDate:addDays(t,30)});
-  const aa=P({name:'Aardappelen',category:'Groenten en fruit',sub:'Verse groenten',unit:'kg',minStock:1});M.addLot({productId:aa.id,locationId:'loc-voorraad',qty:2.5,unit:'kg',dateType:'EIGEN',expiryDate:addDays(t,21)});
-  const ri=P({name:'Basmatirijst',brand:'Lassie',category:'Droge voeding',sub:'Rijst',unit:'g',minStock:500});M.addLot({productId:ri.id,locationId:'loc-voorraad',qty:1000,unit:'g',dateType:'THT',expiryDate:addDays(t,365)});
-  const ko=P({name:'Kokosmelk',brand:'Santa Maria',category:'Conserven en sauzen',sub:'Sauzen',unit:'ml'});M.addLot({productId:ko.id,locationId:'loc-gootsteen',qty:400,unit:'ml',dateType:'THT',expiryDate:addDays(t,500)});
-  const cu=P({name:'Rode currypasta',brand:'Santa Maria',category:'Kruiden en specerijen',sub:"Kruidenpasta's",unit:'g',openShelfDays:28});M.addLot({productId:cu.id,locationId:'loc-koelkast',qty:80,unit:'g',dateType:'THT',expiryDate:addDays(t,120),opened:true,openedDate:addDays(t,-10)});
-  const er=P({name:'Diepvrieserwten',brand:'Iglo',category:'Groenten en fruit',sub:'Diepvriesgroenten',unit:'g'});M.addLot({productId:er.id,locationId:'loc-dv-kelder',qty:1000,unit:'g',dateType:'THT',expiryDate:addDays(t,250)});
-  const za=P({name:'Zalmfilet',category:'Vlees, vis en gevogelte',sub:'Vis',unit:'g'});M.addLot({productId:za.id,locationId:'loc-dv-kelder',qty:250,unit:'g',freezeDate:addDays(t,-60),dateType:'EIGEN',expiryDate:addMonths(addDays(t,-60),4)});
-  const so=P({name:'Restje groentesoep',category:'Diepvries',sub:'Restjes en zelfbereide gerechten',unit:'stuks'});M.addLot({productId:so.id,locationId:'loc-dv-kelder',qty:2,unit:'stuks',freezeDate:addDays(t,-80),dateType:'EIGEN',expiryDate:addDays(t,10)});
-  const or=P({name:'Oregano',brand:'Verstegen',category:'Kruiden en specerijen',sub:'Gedroogde kruiden',unit:'stuks'});M.addLot({productId:or.id,locationId:'loc-kruidenrek',qty:1,unit:'stuks'});
-  const pp=P({name:'Paprikapoeder',brand:'Ducros',category:'Kruiden en specerijen',sub:'Specerijen',unit:'stuks'});M.addLot({productId:pp.id,locationId:'loc-kruidenkast',qty:1,unit:'stuks',dateType:'THT',expiryDate:addDays(t,400)});
-  const ch=P({name:'Melkchocolade',brand:"Côte d'Or",category:'Overige',sub:'Snoep en chocolade',unit:'verpakkingen'});M.addLot({productId:ch.id,locationId:'loc-snoep',qty:2,unit:'verpakkingen',dateType:'THT',expiryDate:addDays(t,150)});
-  const sc=P({name:'Speculoos',brand:'Lotus',category:'Overige',sub:'Koekjes',unit:'verpakkingen'});M.addLot({productId:sc.id,locationId:'loc-snoep',qty:1,unit:'verpakkingen',dateType:'THT',expiryDate:addDays(t,90)});
-  const ba=P({name:'Bananen',category:'Groenten en fruit',sub:'Vers fruit',unit:'stuks'});M.addLot({productId:ba.id,locationId:'loc-voorraad',qty:3,unit:'stuks',dateType:'EIGEN',expiryDate:addDays(t,3)});
-  const br=P({name:'Volkorenbrood',category:'Droge voeding',sub:'Brood en beschuiten',unit:'stuks'});M.addLot({productId:br.id,locationId:'loc-gootsteen',qty:8,unit:'stuks',dateType:'THT',expiryDate:addDays(t,-1)});
-  const bo=P({name:'Boter',brand:'Président',category:'Koeling',sub:'Zuivel',unit:'g'});M.addLot({productId:bo.id,locationId:'loc-koelkast',qty:200,unit:'g',dateType:'THT',expiryDate:addDays(t,40)});
-  const bl=P({name:'Bloem',brand:'Everyday',category:'Droge voeding',sub:'Bloem en meel',unit:'g'});M.addLot({productId:bl.id,locationId:'loc-voorraad',qty:900,unit:'g',dateType:'THT',expiryDate:addDays(t,200)});
-  M.hist('voorbeeld',null,null,{name:'Voorbeelddata',note:'Voorbeeldvoorraad geladen'});});}
 
 /* ===================== UI-BASIS: opslag, helpers, router, vensters ===================== */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1256,8 +1254,8 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
   get secure(){return window.isSecureContext!==false},
   capabilities(){return {camera:!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia),native:'BarcodeDetector' in window,secure:this.secure,notif:'Notification' in window}},
   async ensureDecoder(){if(this.detector||this.zx)return;
-    if('BarcodeDetector' in window){try{const want=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code','itf'];const sup=await BarcodeDetector.getSupportedFormats();const f=want.filter(x=>sup.includes(x));if(f.length){this.detector=new BarcodeDetector({formats:f});return}}catch(e){}}
-    await loadScript(ZXING_URL);const Z=window.ZXing;if(!Z)throw new Error('Barcodebibliotheek (ZXing) niet beschikbaar.');const hints=new Map();hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E,Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.QR_CODE,Z.BarcodeFormat.ITF]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
+    if('BarcodeDetector' in window){try{const want=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code','data_matrix','itf'];const sup=await BarcodeDetector.getSupportedFormats();const f=want.filter(x=>sup.includes(x));if(f.length){this.detector=new BarcodeDetector({formats:f});return}}catch(e){}}
+    await loadScript(ZXING_URL);const Z=window.ZXing;if(!Z)throw new Error('Barcodebibliotheek (ZXing) niet beschikbaar.');const hints=new Map();hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E,Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.QR_CODE,Z.BarcodeFormat.DATA_MATRIX,Z.BarcodeFormat.ITF]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
     const r=new Z.MultiFormatReader();r.setHints(hints);this.zx={Z,r}},
   async decode(src){await this.ensureDecoder();
     if(this.detector){const res=await this.detector.detect(src);return res&&res.length?res[0].rawValue:null}
@@ -1272,7 +1270,7 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
     try{const ds=await navigator.mediaDevices.enumerateDevices();this.devices=ds.filter(d=>d.kind==='videoinput')}catch(e){}
     this.paintControls();
     if(UI.scan.mode==='barcode'||UI.scan.mode==='uit'){try{await this.ensureDecoder()}catch(e){this.setMsg('');toast('Barcodeherkenning niet beschikbaar: '+e.message+'. Typ de code in of gebruik een aangesloten scanner.','error');return}
-      this.setMsg((UI.scan.mode==='uit'?'📤 Uit voorraad — richt op de barcode van de lege verpakking':'Richt de camera op de barcode')+(this.detector?'':' (ZXing)'));const tick=async()=>{if(!this.running)return;if(!this.busy&&video.readyState>=2){this.busy=true;try{const code=await this.decode(video);if(code)this.onCode(code,'camera')}catch(e){}this.busy=false}this.loop=setTimeout(tick,this.detector?180:320)};tick()}
+      this.setMsg((UI.scan.mode==='uit'?'📤 Uit voorraad — richt op de barcode van de lege verpakking':'Richt de camera op de barcode of QR-code')+(this.detector?'':' (ZXing)'));const tick=async()=>{if(!this.running)return;if(!this.busy&&video.readyState>=2){this.busy=true;try{const code=await this.decode(video);if(code)this.onCode(code,'camera')}catch(e){}this.busy=false}this.loop=setTimeout(tick,this.detector?180:320)};tick()}
     else this.setMsg('Richt op het etiket en tik op "Foto nemen"')},
   stop(){this.running=false;clearTimeout(this.loop);if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}this.track=null;this.torch=false;const v=$('#scan-video');if(v)v.srcObject=null;this.paintControls();this.setMsg('')},
   setMsg(t){const el=$('#cam-msg');if(el){el.textContent=t;el.style.display=t?'block':'none'}},
@@ -1299,13 +1297,22 @@ document.addEventListener('keydown',e=>{if(UI.view!=='scanner'||Modals.length)re
 async function fetchOFF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
   try{const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOFF(code,j);if(m)m.health=healthFromOFF(j&&j.product);return m?{status:'ok',data:m}:{status:'notfound'}}
   catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
-async function lookupBarcode(code,src,forceAdd){if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){outScan(code,src);return}toast('Barcode '+code+' herkend — opzoeken…');const local=M.findProductByBarcode(code);
-  if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);openConfirm(Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':'barcode'}));return}
+function gs1Extra(sc){const o={};if(sc.expiryDate){o.expiryDate=sc.expiryDate;o.dateType=sc.dateType}if(sc.batch)o.batch=sc.batch;return o}
+function gs1Note(sc){const p=[];if(sc.expiryDate)p.push((sc.dateType||'THT')+' '+fmtDate(sc.expiryDate));if(sc.batch)p.push('lot '+sc.batch);return p.length?'Uit de QR-code overgenomen: '+p.join(' · ')+'.':''}
+function qrInfo(sc,src){const url=sc.kind==='url'?(/^www\./i.test(sc.url)?'https://'+sc.url:sc.url):'';const resume=Scanner.wasRunning&&UI.view==='scanner';Scanner.wasRunning=false;
+  openModal({title:sc.kind==='url'?'QR-code zonder productcode':'Code zonder productnummer',gid:'dialog-qr',
+    body:'<p style="margin-top:0">'+(sc.kind==='url'?'Deze QR-code bevat een link naar een website, maar geen productnummer. De app kan het product er dus niet mee opzoeken.':'Deze code bevat tekst, maar geen productnummer. De app kan het product er dus niet mee opzoeken.')+'</p><div class="note"><div class="small muted">Inhoud van de code</div><div class="mono small" style="word-break:break-all">'+esc(sc.raw.slice(0,300))+'</div></div><p class="muted small" style="margin-bottom:0">Scan in de plaats de gewone streepjescode op de verpakking. QR-codes met een productnummer (GS1-QR-codes) worden wel herkend, inclusief houdbaarheidsdatum en lotnummer als die erin staan.</p>',
+    foot:(url?'<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Link openen</a>':'')+'<button type="button" class="btn primary" data-act="closeModal">'+(resume?'Opnieuw scannen':'Sluiten')+'</button>',
+    onClose:()=>{Scanner.last={code:'',at:0};if(resume&&UI.view==='scanner')setTimeout(()=>A.camStart().catch(()=>{}),150)}})}
+async function lookupBarcode(code,src,forceAdd){const sc=parseScan(code);if(sc.kind==='url'||sc.kind==='text'){qrInfo(sc,src);return}if(sc.kind==='empty')return;
+  const extra=sc.kind==='gs1'?gs1Extra(sc):{};const qn=sc.kind==='gs1'?gs1Note(sc):'';if(sc.kind==='gs1')code=sc.code;
+  if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){outScan(code,src);return}toast((sc.kind==='gs1'?'QR-code herkend (product '+code+')':'Barcode '+code+' herkend')+' — opzoeken…');const local=M.findProductByBarcode(code);
+  if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);openConfirm(Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':'barcode'},extra,qn?{info:qn}:{}));return}
   const r=await fetchOFF(code);
-  if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:'Open Food Facts',info:'Gevonden in Open Food Facts'+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.',existingProductId:sameName?sameName.id:''}));return}
-  openConfirm({barcode:code,source:'barcode',info:r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Vul de gegevens één keer in — de app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.',infoKind:'warn'})}
+  if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:'Open Food Facts',info:'Gevonden in Open Food Facts'+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
+  openConfirm(Object.assign({barcode:code,source:'barcode',info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Vul de gegevens één keer in — de app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
 A.eanLookup=()=>{const v=($('#ean-in').value||'').replace(/\s+/g,'');if(!v)throw new Error('Geef een barcode in.');if(/^\d+$/.test(v)&&[8,12,13,14].includes(v.length)&&!validEAN(v))toast('Let op: het controlecijfer van deze EAN klopt niet — controleer de code.','error');$('#ean-in').value='';Scanner.last={code:'',at:0};lookupBarcode(v,'manueel')};
-A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,1600,0.85);const code=await Scanner.decode(canvas);if(!code)throw new Error('Geen barcode gevonden op de foto. Zorg dat de barcode scherp, recht en goed verlicht is, of typ de code in.');Scanner.onCode(code,'foto')};
+A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,1600,0.85);const code=await Scanner.decode(canvas);if(!code)throw new Error('Geen barcode of QR-code gevonden op de foto. Zorg dat de code scherp, recht en goed verlicht is, of typ de code in.');Scanner.onCode(code,'foto')};
 
 /* ---------- OCR ---------- */
 function preprocess(canvas,hand){const c=document.createElement('canvas');const sc=Math.min(1,(hand?1600:2000)/Math.max(canvas.width,canvas.height));c.width=Math.round(canvas.width*sc);c.height=Math.round(canvas.height*sc);const ctx=c.getContext('2d');ctx.drawImage(canvas,0,0,c.width,c.height);
@@ -1392,7 +1399,7 @@ A.epPhotoDel=d=>{M.saveProduct({id:d.id,photo:''});toast('Foto verwijderd.')};
 A.editProductOk=d=>{const f=formData($('.modal'));const old=M.S.products[d.id];if(old.unit!==f.unit&&M.lotsOf(d.id).length)toast('Let op: bestaande partijen behouden hun eigen eenheid.');M.saveProduct(Object.assign({id:d.id},f,{minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,openShelfDays:Number(f.openShelfDays)||0}));closeModal();toast('Product opgeslagen.')};
 
 /* ---------- Scanner-weergave ---------- */
-const MODES=[['barcode','🔖','Barcode scannen','EAN via camera, foto of scanner'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
+const MODES=[['barcode','🔖','Barcode scannen','Barcode of QR-code via camera, foto of scanner'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
 function sessionHtml(){const s=UI.scan.session;if(!s.length)return '<div class="empty" style="padding:12px">Nog niets gescand in deze sessie.</div>';return s.slice(0,30).map(x=>'<div class="li" style="padding:8px 4px"><div class="grow small"><b>'+esc(x.label)+'</b><div class="muted">'+x.at.toTimeString().slice(0,5)+'</div></div><button type="button" class="btn sm" data-act="product" data-id="'+esc(x.pid)+'">Bekijk</button></div>').join('')}
 VIEW_RENDER.scanner=function(){if(UI.params.mode&&MODES.some(m=>m[0]===UI.params.mode))UI.scan.mode=UI.params.mode;if(UI.params.loc&&M.S.locations[UI.params.loc])UI.scan.loc=UI.params.loc;const mode=UI.scan.mode;const cap=Scanner.capabilities();
   let h='<div id="scanner-root"><div class="modes" role="group" aria-label="Scanmodus">'+MODES.map(m=>'<button type="button" class="mode" aria-pressed="'+(mode===m[0])+'" data-act="setScanMode" data-mode="'+m[0]+'" data-glean-id="scanmode-'+m[0]+'"><span class="m-ico">'+m[1]+'</span><b>'+m[2]+'</b><span>'+m[3]+'</span></button>').join('')+'</div>';
@@ -1669,7 +1676,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='1.7 · 21-11-2026';
+const APP_VERSION='1.8 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -1799,7 +1806,7 @@ VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.s
     h+='<div class="section"><h3>Opslag</h3><div class="note">'+(Store.mode==='yjs'?'Gedeelde opslag via Glean: wijzigingen worden automatisch en permanent bewaard en gesynchroniseerd met iedereen die deze app gebruikt.':'Automatisch opgeslagen in '+esc(Store.adapter.backend)+' op dit toestel'+(Store.persisted?' (permanente opslag toegestaan)':'')+'. Gegevens blijven bewaard na afsluiten. Wis je de browsergegevens, dan ben je ze kwijt — maak dus regelmatig een back-up.')+'<br>'+n.p+' producten · '+n.l+' partijen · '+n.h+' geschiedenisregels'+(Store.lastSave?' · laatst opgeslagen '+Store.lastSave.toTimeString().slice(0,8):'')+'</div></div>';
     h+='<div class="section"><h3>Exporteren</h3><div class="row"><button type="button" class="btn primary" data-act="exportXlsx">⬇ Excel (alle tabbladen)</button><button type="button" class="btn" data-act="exportInv">⬇ Voorraad CSV</button><button type="button" class="btn" data-act="exportShop">⬇ Boodschappen CSV</button><button type="button" class="btn" data-act="exportHist">⬇ Geschiedenis CSV</button></div></div>';
     h+='<div class="section"><h3>Back-up & herstellen</h3><div class="row"><button type="button" class="btn" data-act="backup">⬇ Back-up downloaden (.json)</button><button type="button" class="btn" data-act="backupCopy">⧉ Back-up kopiëren</button><label class="btn" style="cursor:pointer">⬆ Back-up terugzetten<input type="file" accept="application/json,.json" hidden data-change="restoreFile"></label><button type="button" class="btn" data-act="restorePaste">Plakken & terugzetten</button></div><div class="hint" style="margin-top:6px">Laatste back-up: '+esc(LS.get('lastBackup','nog nooit'))+'. Werkt downloaden niet in dit venster, gebruik dan "kopiëren" en bewaar de tekst.</div></div>';
-    h+='<div class="section"><h3>Voorbeelddata</h3><p class="muted small" style="margin-top:0">Laadt een realistische voorbeeldvoorraad (gehakt in de diepvries, kipfilet die bijna vervalt, …) om alles uit te proberen.</p><button type="button" class="btn" data-act="loadDemo">Voorbeelddata laden</button></div>';
+    if(findDemo(M).count)h+='<div class="section" data-glean-id="settings-demo"><h3>Voorbeelddata</h3><p class="muted small" style="margin-top:0">Er staat nog voorbeelddata in je voorraad. Verwijder die voordat je met je echte voorraad werkt; producten die je zelf hebt toegevoegd blijven staan.</p><button type="button" class="btn danger" data-act="removeDemo">Voorbeelddata verwijderen</button></div>';
     h+='<div class="section"><h3>Alles wissen</h3><button type="button" class="btn danger" data-act="wipe">Alle gegevens wissen…</button></div>'}
   if(tab==='sync'){h+=syncPanel()}
   if(tab==='koppelingen'){const c=Scanner.capabilities();const row=(n,ok,txt,btn)=>'<div class="li"><div class="grow"><div class="main-t">'+n+' '+(ok===true?'<span class="tag lv-ok">actief</span>':ok===false?'<span class="tag lv-orange">beperkt</span>':'<span class="tag">te testen</span>')+'</div><div class="sub-t">'+txt+'</div></div>'+(btn||'')+'</div>';
@@ -1848,7 +1855,6 @@ function doRestore(txt){let j;try{j=JSON.parse(txt)}catch(e){throw new Error('On
 A.restoreFile=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;doRestore(await f.text())};
 A.restorePaste=()=>openModal({title:'Back-up plakken',gid:'dialog-restore',body:'<textarea id="rp" class="inp" style="min-height:240px" placeholder="Plak hier de back-uptekst"></textarea>',foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="restorePasteOk">Terugzetten</button>'});
 A.restorePasteOk=()=>{const t=$('#rp').value;closeModal();doRestore(t)};
-A.loadDemo=()=>confirmBox('Voorbeelddata laden','Er worden ±28 voorbeeldproducten toegevoegd aan je huidige voorraad.','Laden',()=>{seedDemo(M);toast('Voorbeelddata geladen.');go('dashboard')});
 A.wipe=()=>openModal({title:'Alle gegevens wissen',gid:'dialog-wipe',body:'<div class="note err">Dit verwijdert alle producten, partijen, boodschappen, recepten, het weekmenu en de geschiedenis'+(Store.mode==='yjs'?' — voor iedereen met wie de app gedeeld is':'')+'. Maak eerst een back-up.</div><div class="field"><label>Typ WISSEN om te bevestigen</label><input id="wipe-c" class="inp" autofocus></div>',foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn danger" data-act="wipeOk">Definitief wissen</button>'});
 A.wipeOk=()=>{if($('#wipe-c').value.trim().toUpperCase()!=='WISSEN')throw new Error('Typ WISSEN om te bevestigen.');closeModal();M.wipe();toast('Alle gegevens gewist.');go('dashboard')};
 function testOut(t,kind){const el=$('#test-out');if(!el)return toast(t,kind);el.style.display='block';el.className='note'+(kind?' '+kind:'');el.textContent=t}
@@ -1899,7 +1905,7 @@ function buildNav(){$('#nav-side').innerHTML=VIEWS.filter(v=>v[0]!=='scanner').m
 A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">'+VIEWS.map(v=>'<button type="button" class="nav-btn" data-act="navFromMenu" data-view="'+v[0]+'" style="padding:12px"><span class="ico">'+v[2]+'</span>'+esc(v[1])+'</button>').join('')+'</div>'});
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
-const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h='';if(!M.products().length)h='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button><button type="button" class="btn lg" data-act="loadDemo">Voorbeelddata laden</button></div></div>';return h+_dash()};
+const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner();if(!M.products().length)h='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
 function start(){try{Theme.apply();Theme.watch()}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
@@ -1917,6 +1923,38 @@ window.gleanArtifact.revealElement=function(id){if(!M||!id)return Promise.resolv
   closeAllModals();const params={};if(hit[1]==='recepten'){params.tab=/^plan-/.test(id)?'week':/^(my-|hidden-)/.test(id)?'mijn':'suggesties'}if(hit[1]==='instellingen'&&/^set-/.test(id))params.tab=id.slice(4);if(hit[1]==='instellingen'&&/^cat-/.test(id))params.tab='categorieen';
   if(UI.view!==hit[1]||JSON.stringify(params)!==JSON.stringify(Object.fromEntries(Object.entries(UI.params).filter(([k])=>k==='tab')))){UI.view=hit[1];UI.params=params;try{history.replaceState(null,'','#/'+hit[1]+(params.tab?'?tab='+params.tab:''))}catch(e){}render(true)}
   return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))};
+
+/* ---------- Voorbeelddata opsporen en verwijderen ---------- */
+const DEMO_SIG=new Set(["Rundergehakt|Slager", "Kipfilet|Delhaize", "Spaghetti|Barilla", "Tomatenpuree|Boni", "Passata|Mutti", "Halfvolle melk|Inza", "Eieren|Boni", "Griekse yoghurt|Danone", "Geraspte kaas|Everyday", "Gekookte hesp|Herta", "Wortelen|", "Uien|", "Aardappelen|", "Basmatirijst|Lassie", "Kokosmelk|Santa Maria", "Rode currypasta|Santa Maria", "Diepvrieserwten|Iglo", "Zalmfilet|", "Restje groentesoep|", "Oregano|Verstegen", "Paprikapoeder|Ducros", "Melkchocolade|Côte d'Or", "Speculoos|Lotus", "Bananen|", "Volkorenbrood|", "Boter|Président", "Bloem|Everyday"]);
+const DEMO_WIN=120000;
+function findDemo(M){
+  const t=x=>{const v=Date.parse(x||'');return isNaN(v)?null:v};
+  const cand=M.products().filter(p=>DEMO_SIG.has((p.name||'')+'|'+(p.brand||'')));
+  const empty={products:[],keep:[],lots:[],history:[],shopping:[],count:0};
+  if(!cand.length)return empty;
+  let marks=Object.values(M.S.history).filter(h=>h.action==='voorbeeld').map(h=>t(h.ts)).filter(v=>v!=null);
+  if(!marks.length){/* geen markering: zoek een cluster van minstens 20 voorbeeldproducten die binnen 2 minuten zijn aangemaakt */
+    const ts=cand.map(p=>t(p.createdAt)).filter(v=>v!=null).sort((a,b)=>a-b);
+    for(let i=0;i<ts.length;i++){const n=ts.filter(v=>v>=ts[i]&&v<=ts[i]+DEMO_WIN).length;if(n>=20){marks=[ts[i]+DEMO_WIN/2];break}}}
+  if(!marks.length)return empty;
+  const near=x=>{const v=t(x);return v!=null&&marks.some(m=>Math.abs(v-m)<=DEMO_WIN)};
+  const prods=cand.filter(p=>near(p.createdAt));if(!prods.length)return empty;
+  const pids=new Set(prods.map(p=>p.id));const allLots=Object.values(M.S.lots).filter(l=>pids.has(l.productId));
+  const lots=allLots.filter(l=>near(l.createdAt));const realPids=new Set(allLots.filter(l=>!near(l.createdAt)).map(l=>l.productId));
+  const remove=prods.filter(p=>!realPids.has(p.id)),keep=prods.filter(p=>realPids.has(p.id));
+  const rp=new Set(remove.map(p=>p.id)),lids=new Set(lots.map(l=>l.id));
+  const history=Object.values(M.S.history).filter(h=>h.action==='voorbeeld'||rp.has(h.productId)||(h.lotId&&lids.has(h.lotId)));
+  const shopping=Object.values(M.S.shopping).filter(s=>rp.has(s.productId));
+  return {products:remove,keep,lots,history,shopping,count:remove.length+lots.length};
+}
+function removeDemo(M){const d=findDemo(M);if(!d.count)return d;
+  M.tx(()=>{d.lots.forEach(l=>M.del('lots',l.id));d.shopping.forEach(s=>M.del('shopping',s.id));d.history.forEach(h=>M.del('history',h.id));d.products.forEach(p=>M.del('products',p.id))});
+  d.keep.forEach(p=>{try{M.checkMinStock(p.id)}catch(e){}});return d}
+function demoBanner(){const d=findDemo(M);if(!d.count)return '';
+  return '<div class="note warn" style="margin-bottom:16px" data-glean-id="demo-banner"><b>Er staat nog voorbeelddata in je voorraad</b> ('+plural(d.products.length+d.keep.length,'product','producten')+', '+plural(d.lots.length,'partij','partijen')+'). Verwijder ze voordat je met je echte voorraad werkt; producten die je zelf hebt toegevoegd blijven staan.<div class="row" style="margin-top:8px"><button type="button" class="btn primary" data-act="removeDemo">Voorbeelddata verwijderen</button></div></div>'}
+A.removeDemo=()=>{const d=findDemo(M);if(!d.count){toast('Er staat geen voorbeelddata meer in je voorraad.');render();return}
+  const keepTxt=d.keep.length?' '+plural(d.keep.length,'voorbeeldproduct blijft','voorbeeldproducten blijven')+' staan omdat je er zelf partijen aan toevoegde ('+d.keep.map(p=>p.name).join(', ')+'); alleen de voorbeeldpartijen ervan worden verwijderd.':'';
+  confirmBox('Voorbeelddata verwijderen','Dit verwijdert '+plural(d.products.length,'voorbeeldproduct','voorbeeldproducten')+' en '+plural(d.lots.length,'voorbeeldpartij','voorbeeldpartijen')+(d.shopping.length?', '+plural(d.shopping.length,'boodschap','boodschappen')+' die erbij hoorden':'')+' en de bijbehorende geschiedenis. Ben je gekoppeld met Google, dan verdwijnen ze ook daar en op je andere toestellen. Je eigen producten, opslagplaatsen, recepten en instellingen blijven staan.'+keepTxt,'Verwijderen',()=>{const r=removeDemo(M);toast('Voorbeelddata verwijderd ('+plural(r.products.length,'product','producten')+', '+plural(r.lots.length,'partij','partijen')+').');render()},true)};
 
 
 boot().catch(function(e){console.error(e);document.getElementById('view').innerHTML='<div class="loading"><b>De app kon niet starten.</b><div class="small">'+String(e&&e.message||e)+'</div></div>'});
