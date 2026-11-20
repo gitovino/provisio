@@ -1665,6 +1665,12 @@ function fmtDT(d){if(!d)return '—';d=d instanceof Date?d:new Date(d);if(isNaN(
 function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(!/^SVB1:/.test(code))throw new Error('Dit is geen geldige koppelcode. Die begint met "SVB1:" — kopieer hem opnieuw uit je Google Sheet.');
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
+/* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
+async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
+  if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
+  let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
+  return reach?'Google is bereikbaar, maar weigert de app. Zet bij Implementeren › Implementaties beheren › ✎ "Wie heeft toegang" op "Iedereen" (niet "Iedereen met een Google-account"), kies Versie: Nieuwe versie en klik op Implementeren. Gebruik de URL die eindigt op /exec.'
+    :'Kan Google niet bereiken. Iets blokkeert de verbinding met script.google.com: een adblocker of privacy-extensie, een bedrijfsnetwerk of VPN. Probeer een ander netwerk (bv. mobiele data) of zet de extensie uit voor deze site.'}
 const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fails:0,lastOk:null,info:null,orig:null,pending:null,_t:null,_ot:null,_poll:null,
   attach(ad){const self=this;this.orig={put:ad.put.bind(ad),del:ad.del.bind(ad)};
     ad.put=function(c,o){self.orig.put(c,o);if(!self.applying&&o&&o.id!=null)self.track(c,o.id)};
@@ -1685,7 +1691,7 @@ const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fail
       const txt=await r.text();let j;try{j=JSON.parse(txt)}catch(e){throw new Error(r.ok?'Onverwacht antwoord van Google. Controleer of de web-app gepubliceerd is met toegang "Iedereen".':'Google antwoordde met fout '+r.status+'.')}
       if(!j.ok){const e=new Error(j.error||'Onbekende fout bij Google.');e.auth=!!j.auth;e.retry=!!j.retry;throw e}return j}
     catch(e){if(e&&e.name==='AbortError')throw new Error('Google reageert niet (time-out). Probeer later opnieuw.');
-      if(e instanceof TypeError)throw new Error(typeof navigator!=='undefined'&&navigator.onLine===false?'Geen internetverbinding — wijzigingen worden later verstuurd.':'Kan Google niet bereiken. Geen verbinding, of dit venster blokkeert externe verbindingen.');throw e}
+      if(e&&(e instanceof TypeError||e.name==='TypeError')){if(typeof navigator!=='undefined'&&navigator.onLine===false)throw new Error('Geen internetverbinding — wijzigingen worden later verstuurd.');throw new Error(await syncDiagnose(cfg.url))}throw e}
     finally{clearTimeout(to)}},
   keepInfo(j){this.info={mailTo:j.mailTo||'',sheetUrl:j.sheetUrl||'',lastMail:j.lastMail||'',devices:j.devices||{}};LS.set('syncInfo',this.info)},
   applyChanges(list,force){if(!list||!list.length)return 0;let n=0;this.applying=true;
