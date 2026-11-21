@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3fbf8">
 <meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>(function(){var t='auto';try{t=JSON.parse(localStorage.getItem('svb:theme'))||'auto'}catch(e){}var d=t==='dark'||(t!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')})();</script>
 <meta name="glean-artifact-type" content="dashboards">
 <meta name="glean-artifact-type" content="tracker_tables">
@@ -14,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=barcode_scanner,close,dark_mode,favorite,history,home,hourglass_top,inventory_2,light_mode,menu,notifications,person,photo_camera,restaurant_menu,settings,shelves,shopping_cart&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=barcode_scanner,close,dark_mode,favorite,history,home,hourglass_top,install_mobile,inventory_2,light_mode,menu,notifications,person,photo_camera,restaurant_menu,settings,shelves,shopping_cart&display=block">
 <style>/* =====================================================================
    Provisio — Material Design 3 (m3.material.io/styles)
    Kleur: tonaal schema afgeleid van Provisio-groen #2f6f5e (licht + donker)
@@ -356,6 +362,10 @@ details summary{cursor:pointer;font-size:14px;font-weight:500;letter-spacing:.1p
 .distbar i{display:block;min-width:6px}
 .legend{display:inline-flex;align-items:center;gap:6px;margin-right:12px}.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .ysb-ok{background:var(--md-sys-color-ok)}.ysb-good{background:color-mix(in srgb,var(--md-sys-color-ok) 55%,var(--md-sys-color-warn-yellow))}.ysb-orange{background:var(--md-sys-color-warn-orange)}.ysb-red{background:var(--md-sys-color-warn-red)}
+
+/* installatiestappen */
+.steps{margin:0;padding-left:24px;display:grid;gap:8px;font-size:14px;line-height:20px}.steps li::marker{color:var(--md-sys-color-primary);font-weight:500}
+.install-card{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}.install-card .muted{color:var(--md-sys-color-on-primary-container);opacity:.85}
 </style>
 </head>
 <body>
@@ -1751,7 +1761,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='2.0 · 21-11-2026';
+const APP_VERSION='2.1 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -1862,7 +1872,7 @@ const SET_TABS=[['algemeen','Huishouden'],['houdbaarheid','Houdbaarheid'],['meld
 VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.settingsTab=tab;const st=M.settings();
   let h='<div class="tabs" role="tablist">'+SET_TABS.map(t=>'<button type="button" class="tab" role="tab" id="stab-'+t[0]+'" aria-controls="spanel-'+t[0]+'" aria-selected="'+(tab===t[0])+'" data-act="setTab" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div role="tabpanel" id="spanel-'+tab+'" aria-labelledby="stab-'+tab+'" data-glean-id="set-'+tab+'" style="max-width:860px">';
   const num=(path,v,min,max)=>'<input class="inp" type="number" min="'+min+'" max="'+max+'" value="'+esc(v)+'" data-change="setNum" data-path="'+path+'" style="max-width:120px">';
-  if(tab==='algemeen'){h+=themeSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
+  if(tab==='algemeen'){h+=themeSection()+installSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
     h+='<div class="section"><h3>Gebruikers</h3><p class="muted small" style="margin-top:0">Iedere handeling in de geschiedenis wordt bewaard met de naam van de gebruiker. '+(Store.mode==='yjs'?'Je gebruikt de gedeelde Glean-opslag: iedereen met wie je deze app deelt, ziet en bewerkt dezelfde voorraad in realtime.':'De gegevens staan op dit toestel. Wil je met meerdere toestellen tegelijk werken, open de app dan via Glean (gedeeld) of zet een back-up over.')+'</p><div class="row">'+st.users.map(u=>'<span class="chip" aria-pressed="'+(u===M.getUser())+'">'+esc(u)+(st.users.length>1?' <a href="#" data-act="delUser" data-u="'+esc(u)+'" aria-label="Verwijder '+esc(u)+'">✕</a>':'')+'</span>').join('')+'</div><div class="row" style="margin-top:10px"><input id="new-user" class="inp" style="max-width:220px" placeholder="Naam gezinslid" data-enter="addUser"><button type="button" class="btn" data-act="addUser">Toevoegen</button></div></div>'}
   if(tab==='gezondheid')h+=healthSettings(st);
   if(tab==='houdbaarheid'){const t=st.thresholds;h+='<div class="section"><h3>Waarschuwingstermijnen</h3><div class="stack"><div class="row"><span class="tag lv-expired" style="width:140px">Vervallen</span><span class="muted small">datum voorbij</span></div><div class="row"><span class="tag lv-red" style="width:140px">Rood/oranje</span>0 tot '+num('thresholds.red',t.red,0,30)+' dagen</div><div class="row"><span class="tag lv-orange" style="width:140px">Oranje</span>tot '+num('thresholds.orange',t.orange,1,60)+' dagen</div><div class="row"><span class="tag lv-yellow" style="width:140px">Geel</span>tot '+num('thresholds.yellow',t.yellow,1,120)+' dagen</div><div class="row"><span class="tag lv-ok" style="width:140px">Normaal</span><span class="muted small">daarna</span></div></div></div>';
@@ -1982,8 +1992,8 @@ function buildNav(){$('#nav-side').innerHTML=VIEWS.filter(v=>v[0]!=='scanner').m
 A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">'+VIEWS.map(v=>'<button type="button" class="nav-btn" data-act="navFromMenu" data-view="'+v[0]+'">'+ico(v[3],v[2])+esc(v[1])+'</button>').join('')+'</div>'});
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
-const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner();if(!M.products().length)h='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
-function start(){try{Theme.apply();Theme.watch()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
+const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner();if(!M.products().length)h+='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
+function start(){try{Theme.apply();Theme.watch()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
 async function boot(){const collab=window.GleanBridge&&window.GleanBridge.collaboration;
@@ -2032,6 +2042,37 @@ function demoBanner(){const d=findDemo(M);if(!d.count)return '';
 A.removeDemo=()=>{const d=findDemo(M);if(!d.count){toast('Er staat geen voorbeelddata meer in je voorraad.');render();return}
   const keepTxt=d.keep.length?' '+plural(d.keep.length,'voorbeeldproduct blijft','voorbeeldproducten blijven')+' staan omdat je er zelf partijen aan toevoegde ('+d.keep.map(p=>p.name).join(', ')+'); alleen de voorbeeldpartijen ervan worden verwijderd.':'';
   confirmBox('Voorbeelddata verwijderen','Dit verwijdert '+plural(d.products.length,'voorbeeldproduct','voorbeeldproducten')+' en '+plural(d.lots.length,'voorbeeldpartij','voorbeeldpartijen')+(d.shopping.length?', '+plural(d.shopping.length,'boodschap','boodschappen')+' die erbij hoorden':'')+' en de bijbehorende geschiedenis. Ben je gekoppeld met Google, dan verdwijnen ze ook daar en op je andere toestellen. Je eigen producten, opslagplaatsen, recepten en instellingen blijven staan.'+keepTxt,'Verwijderen',()=>{const r=removeDemo(M);toast('Voorbeelddata verwijderd ('+plural(r.products.length,'product','producten')+', '+plural(r.lots.length,'partij','partijen')+').');render()},true)};
+
+/* ---------- Installeren als app (PWA) ---------- */
+const Install={evt:null,justInstalled:false,sw:'',
+  standalone(){try{return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true}catch(e){return false}},
+  platform(){const ua=(navigator&&navigator.userAgent)||'';if(/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&(navigator.maxTouchPoints||0)>1))return 'ios';if(/Android/.test(ua))return 'android';return 'desktop'},
+  browser(){const ua=(navigator&&navigator.userAgent)||'';if(/Edg\//.test(ua))return 'edge';if(/SamsungBrowser/.test(ua))return 'samsung';if(/CriOS|Chrome\//.test(ua))return 'chrome';if(/FxiOS|Firefox\//.test(ua))return 'firefox';if(/Safari\//.test(ua))return 'safari';return 'other'},
+  hosted(){try{return location.protocol==='https:'&&window.top===window}catch(e){return false}},
+  init(){try{window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();Install.evt=e;scheduleRender()});
+    window.addEventListener('appinstalled',()=>{Install.evt=null;Install.justInstalled=true;toast('Provisio is geïnstalleerd. Je vindt de app nu bij je andere apps.');scheduleRender()});
+    if(Install.hosted()&&navigator.serviceWorker&&navigator.serviceWorker.register)navigator.serviceWorker.register('sw.js').then(()=>{Install.sw='ok'}).catch(e=>{Install.sw='fout: '+(e&&e.message||e)})}catch(e){}},
+  steps(){const p=Install.platform(),b=Install.browser();
+    if(p==='ios')return b==='safari'||b==='other'?['Tik onderaan in Safari op de deelknop <b>⬆️</b> (vierkant met pijl).','Scrol omlaag en tik op <b>Zet op beginscherm</b>.','Tik rechtsboven op <b>Voeg toe</b>.']
+      :['Tik op de deelknop <b>⬆️</b> (in Chrome rechtsboven in de adresbalk).','Tik op <b>Zet op beginscherm</b>. Zie je die optie niet, open Provisio dan in Safari.','Tik op <b>Voeg toe</b>.'];
+    if(p==='android')return b==='samsung'?['Tik op het menu <b>☰</b> onderaan.','Tik op <b>Pagina toevoegen aan › Startscherm</b>.','Bevestig met <b>Toevoegen</b>.']
+      :b==='firefox'?['Tik op het menu <b>⋮</b>.','Tik op <b>Installeren</b> of <b>Toevoegen aan startscherm</b>.','Bevestig met <b>Toevoegen</b>.']
+      :['Tik rechtsboven op het menu <b>⋮</b>.','Tik op <b>App installeren</b> (of <b>Toevoegen aan startscherm › Installeren</b>).','Bevestig met <b>Installeren</b>.'];
+    if(b==='edge')return ['Klik rechts in de adresbalk op het app-icoon <b>⊞</b>, of open het menu <b>…</b> › <b>Apps</b> › <b>Provisio installeren</b>.','Klik op <b>Installeren</b>.'];
+    if(b==='chrome')return ['Klik rechts in de adresbalk op het installeericoon <b>⊕</b>, of open het menu <b>⋮</b> › <b>Opslaan en delen</b> › <b>Provisio installeren</b>.','Klik op <b>Installeren</b>.'];
+    if(b==='safari')return ['Kies in de menubalk <b>Archief › Voeg toe aan Dock</b> (macOS Sonoma of nieuwer).','Klik op <b>Voeg toe</b>.'];
+    return ['Deze browser kan Provisio niet als app installeren. Open de app in <b>Chrome</b> of <b>Edge</b> om ze te installeren.']}};
+function installSection(){let h='<div class="section" data-glean-id="settings-install"><h3>App installeren</h3>';
+  if(Install.standalone()||Install.justInstalled)return h+'<div class="note ok">✓ Je gebruikt Provisio als geïnstalleerde app. Updates krijg je automatisch: open de app gewoon opnieuw nadat je een nieuwe versie op GitHub hebt gezet.</div></div>';
+  if(!Install.hosted())return h+'<div class="note">Installeren kan alleen vanaf je eigen adres (<span class="mono">gitovino.github.io/provisio</span>), niet in dit voorbeeldvenster.</div></div>';
+  h+='<p class="muted" style="margin-top:0">Zet Provisio als app op je startscherm of bureaublad: eigen icoon, opent zonder adresbalk en start ook zonder internet.</p>';
+  if(Install.evt)h+='<button type="button" class="btn primary" data-act="installApp">'+ico('install_mobile','📲')+'Provisio installeren</button>';
+  else h+='<ol class="steps">'+Install.steps().map(s=>'<li>'+s+'</li>').join('')+'</ol>';
+  return h+'</div>'}
+function installBanner(){if(!Install.evt||Install.standalone()||LS.get('installDismissed',false))return '';
+  return '<div class="card install-card" style="margin-bottom:16px" data-glean-id="install-banner"><div class="row nowrap" style="align-items:flex-start;gap:16px"><img src="icons/icon-192.png" alt="" width="48" height="48" style="border-radius:12px;flex:0 0 48px" onerror="this.remove()"><div class="grow"><div style="font-size:16px;line-height:24px;font-weight:500">Installeer Provisio als app</div><div class="muted">Eigen icoon op je startscherm, opent zonder adresbalk en werkt ook offline.</div><div class="row" style="margin-top:12px"><button type="button" class="btn primary" data-act="installApp">Installeren</button><button type="button" class="btn ghost" data-act="installLater">Niet nu</button></div></div></div></div>'}
+A.installApp=async()=>{const e=Install.evt;if(!e){go('instellingen',{tab:'algemeen'});return}try{await e.prompt();const c=await e.userChoice;Install.evt=null;if(c&&c.outcome==='dismissed')toast('Installatie geannuleerd. Je kunt Provisio later installeren via Instellingen › Algemeen.')}catch(err){toast('Installeren lukte niet: '+(err&&err.message||err),'error')}render()};
+A.installLater=()=>{LS.set('installDismissed',true);toast('Je kunt Provisio later installeren via Instellingen › Algemeen.');render()};
 
 
 boot().catch(function(e){console.error(e);document.getElementById('view').innerHTML='<div class="loading"><b>De app kon niet starten.</b><div class="small">'+String(e&&e.message||e)+'</div></div>'});
