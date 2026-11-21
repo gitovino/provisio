@@ -297,7 +297,7 @@ table.t td{padding:12px 8px;border-bottom:1px solid var(--md-sys-color-outline-v
 @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important}}
 /* scanner */
-.modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
 @media screen and (max-width:700px){.modes{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .mode{border:1px solid var(--md-sys-color-outline-variant);border-radius:var(--md-sys-shape-corner-medium);padding:16px;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:4px;overflow:hidden}
 .mode .m-ico{font-size:26px}.mode b{font-size:16px;line-height:24px;font-weight:500;letter-spacing:.15px}.mode span{font-size:12px;line-height:16px;letter-spacing:.4px;color:var(--md-sys-color-on-surface-variant)}
@@ -1471,7 +1471,7 @@ A.cfSave=d=>{cfSnapshot();const f=CF.pref;const next=d.next==='1';if(!f.name)thr
     else for(let i=0;i<count;i++)saved.push(M.addLot({productId:pid,locationId:f.locationId,qty,unit:f.unit,purchaseDate:f.purchaseDate,dateType:f.dateType,expiryDate:f.expiryDate,freezeDate:f.freezeDate,opened:f.opened,batch:f.batch,notes:f.notes,needsCheck:f.needsCheck,source:f.source||'manueel'}))});
   CF.saved=true;const p=M.S.products[pid];UI.scan.session.unshift({pid,lots:saved.map(l=>l.id),label:p.name+' · '+(count>1?count+' × ':'')+fmtQty(qty,f.unit)+' → '+M.locName(f.locationId),at:new Date()});
   closeModal();toast('Opgeslagen: '+p.name+(count>1?' ('+count+' afzonderlijke items)':'')+' in '+M.locName(f.locationId)+'.');
-  if(CF.ctx==='scanner'){Scanner.refresh();if(next&&(UI.scan.mode==='barcode'||Scanner.wasRunning))setTimeout(()=>A.camStart().catch(e=>toast(e.message,'error')),200);else if(next&&UI.scan.mode==='manueel')setTimeout(()=>openConfirm({}),150)}};
+  if(CF.ctx==='scanner'){Scanner.refresh();if(next&&(UI.scan.mode==='barcode'||Scanner.wasRunning))setTimeout(()=>A.camStart().catch(e=>toast(e.message,'error')),200);else if(next&&UI.scan.mode==='manueel')setTimeout(()=>openConfirm({}),150);else if(next&&UI.scan.mode==='zoeken')setTimeout(()=>{const q=$('#sr-q');if(q){q.focus();q.select&&q.select()}},150)}};
 A.addLotFor=d=>{const p=M.S.products[d.id];if(!p)return;openConfirm(Object.assign(prefFromProduct(p),{source:'manueel'}),'inline')};
 A.editProduct=d=>{const p=M.S.products[d.id];const cats=M.categories();
   openModal({title:'Product bewerken',gid:'dialog-edit-product',wide:true,body:'<div class="grid2"><div class="field span2"><label>Productnaam</label><input name="name" class="inp" value="'+esc(p.name)+'"></div><div class="field"><label>Merk</label><input name="brand" class="inp" value="'+esc(p.brand||'')+'"></div><div class="field"><label>Barcode / EAN</label><input name="barcode" class="inp mono" value="'+esc(p.barcode||'')+'"></div><div class="field"><label>Categorie</label><select name="category" class="inp" data-change="epCat"><option value="">—</option>'+sel(p.category||'',cats.map(c=>c.name))+'</select></div><div class="field"><label>Subcategorie</label><select name="sub" id="ep-sub" class="inp">'+subOptions(p.category,p.sub)+'</select></div>'+
@@ -1484,12 +1484,13 @@ A.epPhotoDel=d=>{M.saveProduct({id:d.id,photo:''});toast('Foto verwijderd.')};
 A.editProductOk=d=>{const f=formData($('.modal'));const old=M.S.products[d.id];if(old.unit!==f.unit&&M.lotsOf(d.id).length)toast('Let op: bestaande partijen behouden hun eigen eenheid.');M.saveProduct(Object.assign({id:d.id},f,{minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,openShelfDays:Number(f.openShelfDays)||0}));closeModal();toast('Product opgeslagen.')};
 
 /* ---------- Scanner-weergave ---------- */
-const MODES=[['barcode','🔖','Barcode scannen','Barcode of QR-code via camera, foto of scanner'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
+const MODES=[['barcode','🔖','Barcode scannen','Barcode of QR-code via camera, foto of scanner'],['zoeken','🔎','Online zoeken','Op naam of merk in Open Food Facts'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
 function sessionHtml(){const s=UI.scan.session;if(!s.length)return '<div class="empty" style="padding:12px">Nog niets gescand in deze sessie.</div>';return s.slice(0,30).map(x=>'<div class="li" style="padding:8px 4px"><div class="grow small"><b>'+esc(x.label)+'</b><div class="muted">'+x.at.toTimeString().slice(0,5)+'</div></div><button type="button" class="btn sm" data-act="product" data-id="'+esc(x.pid)+'">Bekijk</button></div>').join('')}
 VIEW_RENDER.scanner=function(){if(UI.params.mode&&MODES.some(m=>m[0]===UI.params.mode))UI.scan.mode=UI.params.mode;if(UI.params.loc&&M.S.locations[UI.params.loc])UI.scan.loc=UI.params.loc;const mode=UI.scan.mode;const cap=Scanner.capabilities();
   let h='<div id="scanner-root"><div class="modes" role="group" aria-label="Scanmodus">'+MODES.map(m=>'<button type="button" class="mode" aria-pressed="'+(mode===m[0])+'" data-act="setScanMode" data-mode="'+m[0]+'" data-glean-id="scanmode-'+m[0]+'"><span class="m-ico">'+m[1]+'</span><b>'+m[2]+'</b><span>'+m[3]+'</span></button>').join('')+'</div>';
   h+='<div class="dash"><div class="c8 stack">';
-  if(mode==='manueel'){h+='<div class="card" data-glean-id="scan-manual"><h2 class="panel-title">Nieuw product</h2><p class="muted small" style="margin-top:0">Voeg een product toe zonder barcode, bv. verse groenten, restjes of zelfgemaakte soep.</p><button type="button" class="btn primary lg" data-act="cfNew">✍️ Product manueel invoeren</button></div>'+
+  if(mode==='zoeken'){h+=searchPanel()}
+  else if(mode==='manueel'){h+='<div class="card" data-glean-id="scan-manual"><h2 class="panel-title">Nieuw product</h2><p class="muted small" style="margin-top:0">Voeg een product toe zonder barcode, bv. verse groenten, restjes of zelfgemaakte soep.</p><button type="button" class="btn primary lg" data-act="cfNew">✍️ Product manueel invoeren</button></div>'+
     '<div class="card" data-glean-id="scan-topup"><h2 class="panel-title">Bestaande voorraad aanvullen</h2><input id="topup-q" class="inp" placeholder="Zoek een product dat je al hebt…" value="'+esc(UI.scan.tq||'')+'" data-input="scanTopupQ"><div class="list" id="topup-list" style="margin-top:8px">'+topupList()+'</div></div>'}
   else{h+='<div class="card" data-glean-id="scan-camera"><div class="cam"><video id="scan-video" playsinline muted></video>'+(mode==='barcode'||mode==='uit'?'<div class="reticle"></div>':'')+'<div id="cam-placeholder" class="loading" style="position:absolute;inset:0;min-height:0;text-align:center;padding:16px"><div style="font-size:40px">'+(mode==='uit'?'📤':mode==='barcode'?'🔖':'📷')+'</div><div>'+(cap.camera?(mode==='uit'?'Start de camera en scan de lege verpakking':mode==='barcode'?'Start de camera en richt op de barcode':'Start de camera of kies een foto'):'Camera niet beschikbaar in deze omgeving')+'</div></div><div id="cam-msg" class="cam-msg" style="display:none"></div></div><div class="row" id="cam-controls" style="margin-top:10px"></div>';
     if(!cap.secure)h+='<div class="note warn" style="margin-top:10px">De camera werkt alleen via <b>https://</b> of localhost. "Foto" hieronder werkt wel: je telefoon opent dan de camera-app.</div>';
@@ -1594,6 +1595,56 @@ async function autoHealth(){if(AUTOH.running||!M||(typeof navigator!=='undefined
   const now=Date.now(),wait=3*864e5;const ps=M.products().filter(p=>p.barcode&&!(p.health&&p.health.nutri)&&M.productTotal(p.id)>0&&!(tried[p.id]&&now-tried[p.id]<wait)).slice(0,25);let n=0;
   for(const p of ps){tried[p.id]=now;try{localStorage.setItem('vb-htried',JSON.stringify(tried))}catch(e){}if(await refreshHealth(p.id,true))n++;await new Promise(r=>setTimeout(r,1500))}
   AUTOH.running=false;if(n&&(UI.view==='gezondheid'||UI.view==='voorraad'))render();return n}
+
+/* ---------- Online zoeken op productnaam (Open Food Facts) ---------- */
+const SR={status:'idle',q:'',items:[],page:1,count:0,scope:'be',error:'',fallback:false};
+const SR_PAGE=24;
+function srUrl(q,page,be){return 'https://world.openfoodfacts.org/cgi/search.pl?action=process&json=1&search_simple=1&search_terms='+encodeURIComponent(q)+(be?'&tagtype_0=countries&tag_contains_0=contains&tag_0=en%3Abelgium':'')+'&sort_by=unique_scans_n&page_size='+SR_PAGE+'&page='+page+'&fields=code,'+OFF_FIELDS}
+async function offNameSearch(q,page,be){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),15000);
+  try{const r=await fetch(srUrl(q,page,be),{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);
+    if(r.status===429)throw new Error('te veel zoekopdrachten na elkaar — wacht een minuutje');if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();return {count:Number(j.count)||0,products:(j.products||[]).filter(p=>p&&p.code)}}
+  catch(e){clearTimeout(to);throw new Error(e.name==='AbortError'?'time-out':(e.message||'netwerkfout'))}}
+function srItem(o){const code=String(o.code);const m=mapOFF(code,{status:1,product:o});if(!m||!m.name)return null;m.health=healthFromOFF(o);
+  const e=estimateScore(m.health,hSet().addRisk);return Object.assign(m,{code,score:e?e.score:null,nutri:m.health&&m.health.nutri})}
+async function runSearch(more){const q=SR.q;if(!more){SR.items=[];SR.page=1;SR.fallback=false}SR.status='busy';SR.error='';paintSearch();
+  try{const be=SR.scope==='be'&&!SR.fallback;let r=await offNameSearch(q,SR.page,be);
+    if(!more&&be&&!r.products.length){SR.fallback=true;r=await offNameSearch(q,1,false)}
+    const seen=new Set(SR.items.map(x=>x.code));r.products.forEach(o=>{const it=srItem(o);if(it&&!seen.has(it.code)){seen.add(it.code);SR.items.push(it)}});
+    SR.count=r.count;SR.status=SR.items.length?'ok':'empty'}
+  catch(e){SR.status='error';SR.error=e.message}
+  paintSearch()}
+function paintSearch(){const el=$('#sr-results');if(el)el.innerHTML=searchResults();else if(UI.view==='scanner')render()}
+function searchResults(){
+  if(SR.status==='idle')return '<div class="empty" style="padding:16px">Typ een productnaam en druk op <b>Zoeken</b>.<br><span class="small">Bijvoorbeeld: <i>Boni volle yoghurt</i>, <i>Lotus speculoos</i> of <i>Alpro sojadrink</i>.</span></div>';
+  if(SR.status==='busy'&&!SR.items.length)return '<div class="loading" style="min-height:120px">Zoeken in Open Food Facts…</div>';
+  if(SR.status==='error'&&!SR.items.length)return '<div class="note warn">Open Food Facts niet bereikbaar ('+esc(SR.error)+'). Controleer je internetverbinding en probeer opnieuw. In een afgeschermd voorbeeldvenster kan externe toegang geblokkeerd zijn.</div>';
+  if(SR.status==='empty')return '<div class="note">Niets gevonden voor “'+esc(SR.q)+'”. Probeer minder of andere woorden (bv. alleen merk + productsoort), of voeg het product manueel toe.</div><div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="srManual">✍️ Manueel toevoegen</button></div>';
+  let h=SR.fallback?'<div class="note" style="margin-bottom:8px">Geen resultaten bij producten verkocht in België — hieronder resultaten van alle landen.</div>':'';
+  h+='<div class="small muted" style="margin-bottom:6px">'+SR.count+' resultaten'+(SR.scope==='be'&&!SR.fallback?' in België':'')+' · meest gescand eerst</div><div class="list" data-glean-id="search-results">';
+  h+=SR.items.map(it=>{const b=it.score!=null?scoreBand(it.score):null;
+    return '<div class="li" data-glean-id="sr-'+esc(it.code)+'"><div class="thumb">'+(it.photo?'<img src="'+esc(it.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(it.name)+(it.brand?' <span class="muted" style="font-weight:400">· '+esc(it.brand)+'</span>':'')+'</div><div class="sub-t">'+(it.quantityLabel?esc(it.quantityLabel)+' · ':'')+(b?'<span class="ys ys-'+b.cls+' est">≈ '+it.score+'</span> ':'')+(it.nutri?nutriBadge(it.nutri):'')+(M.findProductByBarcode(it.code)?' · <b>al in je producten</b>':'')+'</div></div><div class="acts"><button type="button" class="btn sm primary" data-act="srPick" data-code="'+esc(it.code)+'">+ Toevoegen</button><a class="btn sm ghost" href="https://world.openfoodfacts.org/product/'+encodeURIComponent(it.code)+'" target="_blank" rel="noopener">Info</a></div></div>'}).join('');
+  h+='</div>';
+  if(SR.status==='busy')h+='<div class="loading" style="min-height:60px">Meer laden…</div>';
+  else if(SR.status==='error')h+='<div class="note warn" style="margin-top:8px">Meer laden lukte niet ('+esc(SR.error)+').</div>';
+  else if(SR.items.length<SR.count&&SR.page<10)h+='<div class="row" style="margin-top:10px;justify-content:center"><button type="button" class="btn" data-act="srMore">Meer resultaten</button></div>';
+  return h}
+function searchPanel(){return '<div class="card" data-glean-id="scan-search"><h2 class="panel-title">Product online zoeken</h2><p class="muted small" style="margin-top:0">Zoek op naam en merk in Open Food Facts en voeg het product toe zoals bij een gescande barcode — met inhoud, categorie, foto en gezondheidsscore.</p>'+
+  '<div class="row nowrap"><input id="sr-q" class="inp" type="search" enterkeyhint="search" autocomplete="off" placeholder="Naam of merk, bv. Boni volle yoghurt" value="'+esc(SR.q)+'" data-enter="srGo"><button type="button" class="btn primary" data-act="srGo">Zoeken</button></div>'+
+  '<label class="row" style="margin-top:8px;gap:8px;cursor:pointer"><input type="checkbox" '+(SR.scope==='be'?'checked':'')+' data-change="srScope"><span class="small">Eerst producten verkocht in België</span></label>'+
+  '<div id="sr-results" style="margin-top:12px">'+searchResults()+'</div>'+
+  '<div class="hint" style="margin-top:8px">Typ je een barcode (alleen cijfers), dan wordt die rechtstreeks opgezocht. Open Food Facts is een gratis, open databank: niet elk product staat erin en gegevens kunnen onvolledig zijn — je controleert alles voor het opslaan.</div></div>'}
+A.srGo=()=>{const el=$('#sr-q');const q=((el&&el.value)||'').trim().replace(/\s+/g,' ');if(!q)throw new Error('Typ een productnaam om te zoeken.');
+  const digits=q.replace(/\s+/g,'');if(/^\d{8,14}$/.test(digits)){SR.q='';if(el)el.value='';lookupBarcode(digits,'manueel');return}
+  if(q.length<2)throw new Error('Typ minstens 2 tekens.');if(SR.status==='busy')return;SR.q=q;return runSearch(false)};
+A.srMore=()=>{if(SR.status==='busy')return;SR.page++;return runSearch(true)};
+A.srScope=(d,el)=>{SR.scope=el.checked?'be':'all';if(SR.q&&SR.status!=='busy')return runSearch(false)};
+A.srManual=()=>openConfirm({source:'manueel',name:SR.q},'scanner');
+A.srPick=d=>{const it=SR.items.find(x=>x.code===d.code);if(!it)return;const local=M.findProductByBarcode(it.code);
+  if(local){if(!local.health&&it.health)quietSave(local.id,{health:it.health,photo:local.photo||it.photo||''});openConfirm(Object.assign(prefFromProduct(local),{barcode:it.code,source:'online zoeken',info:'Dit product heb je al — er wordt een nieuwe partij toegevoegd.'}));return}
+  const same=M.findProductByName(it.name,it.brand);
+  openConfirm(Object.assign({},same?prefFromProduct(same):{},{name:it.name,brand:it.brand,category:it.category,sub:it.sub,barcode:it.code,photo:it.photo,qty:it.qty,unit:it.unit,health:it.health,source:'Open Food Facts',
+    info:'Gevonden via online zoeken'+(it.quantityLabel?' · inhoud '+it.quantityLabel:'')+healthLine(it.health)+'. Controleer de gegevens.',existingProductId:same?same.id:''}))};
 
 /* ===================== RECEPTEN & WEEKPLANNER ===================== */
 const MEAL_LABEL={ontbijt:'Ontbijt',lunch:'Lunch',avond:'Avondmaal'};
@@ -1761,7 +1812,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='2.1 · 21-11-2026';
+const APP_VERSION='2.2 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
