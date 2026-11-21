@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=barcode_scanner,close,dark_mode,favorite,history,home,hourglass_top,install_mobile,inventory_2,light_mode,menu,notifications,person,photo_camera,restaurant_menu,settings,shelves,shopping_cart&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=arrow_upward,barcode_scanner,close,dark_mode,document_scanner,favorite,history,home,hourglass_top,install_mobile,inventory_2,light_mode,menu,notifications,nutrition,person,photo_camera,record_voice_over,restaurant_menu,settings,shelves,shopping_cart&display=block">
 <style>/* =====================================================================
    Provisio — Material Design 3 (m3.material.io/styles)
    Kleur: tonaal schema afgeleid van Provisio-groen #2f6f5e (licht + donker)
@@ -283,7 +283,7 @@ table.t td{padding:12px 8px;border-bottom:1px solid var(--md-sys-color-outline-v
 .modal .card,.modal .hcard{background:var(--md-sys-color-surface-container-low)}
 .modal .m-foot{padding:16px 24px 24px;border-top:0;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;position:sticky;bottom:0;background:var(--md-sys-color-surface-container-high);color:var(--md-sys-color-on-surface);border-radius:0 0 var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large)}
 .modal .m-foot .btn:not(.primary):not(.danger){border-color:transparent;padding:0 12px}
-@media screen and (max-width:640px){.overlay{padding:56px 0 0;align-items:flex-end}.modal{border-radius:var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large) 0 0;min-height:50vh;background:var(--md-sys-color-surface-container-low);animation:sheetin var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized-decelerate)}.modal::before{content:"";display:block;width:32px;height:4px;border-radius:2px;background:var(--md-sys-color-on-surface-variant);opacity:.4;margin:16px auto 0}.modal .m-head{padding-top:12px}.modal .m-foot{border-radius:0;background:var(--md-sys-color-surface-container-low);padding-bottom:calc(16px + env(safe-area-inset-bottom))}}
+@media screen and (max-width:640px){.overlay{padding:56px 0 0;flex-direction:column;align-items:stretch;justify-content:flex-start;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}.modal{margin-top:auto;flex-shrink:0;border-radius:var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large) 0 0;min-height:50vh;background:var(--md-sys-color-surface-container-low);animation:sheetin var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized-decelerate)}.modal::before{content:"";display:block;width:32px;height:4px;border-radius:2px;background:var(--md-sys-color-on-surface-variant);opacity:.4;margin:16px auto 0}.modal .m-head{padding-top:12px}.modal .m-foot{border-radius:0;background:var(--md-sys-color-surface-container-low);padding-bottom:calc(16px + env(safe-area-inset-bottom))}}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
 @keyframes dlgin{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 @keyframes sheetin{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
@@ -366,6 +366,31 @@ details summary{cursor:pointer;font-size:14px;font-weight:500;letter-spacing:.1p
 /* installatiestappen */
 .steps{margin:0;padding-left:24px;display:grid;gap:8px;font-size:14px;line-height:20px}.steps li::marker{color:var(--md-sys-color-primary);font-weight:500}
 .install-card{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}.install-card .muted{color:var(--md-sys-color-on-primary-container);opacity:.85}
+
+/* geen herhaalde animatie bij bijwerken van een open venster */
+.overlay.no-anim,.overlay.no-anim .modal{animation:none}
+/* naar-boven-knop */
+.to-top{position:fixed;right:16px;bottom:24px;z-index:150;display:none;align-items:center;gap:8px;height:48px;padding:0 20px 0 16px;border:0;border-radius:var(--md-sys-shape-corner-large);background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container);box-shadow:var(--md-sys-elevation-level3);font:500 14px/20px var(--md-ref-typeface-plain);letter-spacing:.1px;cursor:pointer}
+.to-top.show{display:inline-flex}
+@media screen and (max-width:900px){.to-top{bottom:104px}}
+.scan-loc{padding:12px 16px}
+
+/* ---------- Toegankelijkheid ---------- */
+html[data-size="l"] body{zoom:1.15}html[data-size="xl"] body{zoom:1.3}html[data-size="xxl"] body{zoom:1.5}
+html.hc{--md-sys-color-on-surface-variant:var(--md-sys-color-on-surface);--md-sys-color-outline:var(--md-sys-color-on-surface);--md-sys-color-outline-variant:var(--md-sys-color-on-surface)}
+html.hc .muted,html.hc .hint,html.hc .sub-t,html.hc .lbl{color:var(--md-sys-color-on-surface)!important;opacity:1!important}
+html.hc .btn,html.hc .chip,html.hc .inp,html.hc .mode,html.hc .seg{border:2px solid var(--md-sys-color-on-surface)!important}
+html.hc .card,html.hc .li,html.hc .note,html.hc .modal{outline:1px solid var(--md-sys-color-on-surface);outline-offset:-1px}
+html.hc a{text-decoration:underline}
+html.hc :focus-visible{outline:3px solid var(--md-sys-color-primary)!important;outline-offset:2px}
+html.hc .chip[aria-pressed="true"],html.hc .seg [aria-pressed="true"]{outline:3px solid var(--md-sys-color-primary);outline-offset:1px}
+html.big .btn{min-height:56px;font-size:16px;padding:0 24px}html.big .btn.sm{min-height:48px;font-size:15px}
+html.big .chip{min-height:48px;font-size:15px;padding:0 16px}html.big .inp{min-height:56px;font-size:17px}
+html.big .icon-btn{width:56px;height:56px}html.big .check input,html.big .a11y-opt input{width:24px;height:24px}
+html.big .seg button{min-height:52px;font-size:16px}
+html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+.a11y-opt{align-items:flex-start;gap:12px;line-height:20px}.a11y-opt input{margin-top:2px;flex:0 0 auto}
+.ai-help{background:var(--md-sys-color-surface-container);color:var(--md-sys-color-on-surface)}
 </style>
 </head>
 <body>
@@ -1031,11 +1056,13 @@ function openModal(m){Modals.push(m);paintModal();return m}
 function closeModal(){const m=Modals.pop();if(m&&m.onClose)try{m.onClose()}catch(e){}paintModal()}
 function closeAllModals(){while(Modals.length)closeModal()}
 function replaceModal(m){Modals.pop();Modals.push(m);paintModal()}
-function paintModal(){const root=$('#modal-root');if(!Modals.length){root.innerHTML='';document.body.style.overflow='';return}const m=Modals[Modals.length-1];
+function paintModal(){const root=$('#modal-root');if(!Modals.length){root.innerHTML='';root._m=null;document.body.style.overflow='';return}const m=Modals[Modals.length-1];
+  const same=root._m===m;const ov0=same?root.querySelector('.overlay'):null;const st=ov0?ov0.scrollTop:0;const mb0=ov0?ov0.querySelector('.m-body'):null;const st2=mb0?mb0.scrollTop:0;const fid=same&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#modal-root')?(document.activeElement.getAttribute('name')||document.activeElement.id||''):'';root._m=m;
   const body=typeof m.body==='function'?m.body():m.body;const foot=typeof m.foot==='function'?m.foot():m.foot;
-  root.innerHTML='<div class="overlay" data-act="overlay"><div class="modal'+(m.wide?' wide':'')+'" role="dialog" aria-modal="true" aria-labelledby="m-title" data-glean-id="'+esc(m.gid||'dialog')+'"><div class="m-head"><h3 id="m-title">'+esc(m.title)+'</h3><button type="button" class="icon-btn" data-act="closeModal" aria-label="Sluiten">'+ico('close','✕')+'</button></div><div class="m-body">'+body+'</div>'+(foot?'<div class="m-foot">'+foot+'</div>':'')+'</div></div>';
+  root.innerHTML='<div class="overlay'+(same?' no-anim':'')+'" data-act="overlay"><div class="modal'+(m.wide?' wide':'')+'" role="dialog" aria-modal="true" aria-labelledby="m-title" data-glean-id="'+esc(m.gid||'dialog')+'"><div class="m-head"><h3 id="m-title">'+esc(m.title)+'</h3><button type="button" class="icon-btn" data-act="closeModal" aria-label="Sluiten">'+ico('close','✕')+'</button></div><div class="m-body">'+body+'</div>'+(foot?'<div class="m-foot">'+foot+'</div>':'')+'</div></div>';
   document.body.style.overflow='hidden';if(m.mount)try{m.mount($('.modal',root))}catch(e){console.error(e)}
-  const first=$('.modal [autofocus]',root);if(first)setTimeout(()=>first.focus(),30)}
+  if(same){const ov=root.querySelector('.overlay');if(ov)ov.scrollTop=st;const mb=ov&&ov.querySelector('.m-body');if(mb)mb.scrollTop=st2;if(fid){const el=root.querySelector('[name="'+fid+'"]')||root.querySelector('#'+fid);if(el&&el.focus)try{el.focus({preventScroll:true})}catch(e){}}return}
+  const first=$('.modal [autofocus]',root);if(first)setTimeout(()=>first.focus({preventScroll:true}),30)}
 function refreshLiveModal(){const m=Modals[Modals.length-1];if(m&&m.live){const sc=$('.overlay')?$('.overlay').scrollTop:0;paintModal();if($('.overlay'))$('.overlay').scrollTop=sc}}
 function confirmBox(title,text,okLabel,fn,danger){openModal({title,gid:'dialog-confirm',body:'<p style="margin:0">'+esc(text)+'</p>',foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn '+(danger?'danger':'primary')+'" data-act="confirmOk">'+esc(okLabel||'Bevestigen')+'</button>',onOk:fn})}
 function formData(root){const o={};$$('[name]',root).forEach(el=>{if(el.type==='checkbox')o[el.name]=el.checked;else if(el.type==='radio'){if(el.checked)o[el.name]=el.value}else o[el.name]=el.value.trim()});return o}
@@ -1050,7 +1077,7 @@ const UI={view:'dashboard',params:{},inv:{q:'',loc:'',cat:'',status:'',sort:'naa
 function parseHash(){const h=(location.hash||'').replace(/^#\/?/,'');const [v,qs]=h.split('?');const params={};if(qs)qs.split('&').forEach(kv=>{const [k,val]=kv.split('=');if(k)params[decodeURIComponent(k)]=decodeURIComponent(val||'')});return {view:VIEWS.some(x=>x[0]===v)?v:'dashboard',params}}
 function go(view,params){const qs=params&&Object.keys(params).length?'?'+Object.entries(params).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&'):'';const target='#/'+view+qs;
   if(location.hash===target){applyRoute();return}try{location.hash=target}catch(e){UI.view=view;UI.params=params||{};render(true)}}
-function applyRoute(){const r=parseHash();const prev=UI.view;UI.view=r.view;UI.params=r.params;if(prev==='scanner'&&UI.view!=='scanner'&&window.Scanner)Scanner.stop();UI.inv._lastParam=undefined;closeAllModals();render(true);window.scrollTo(0,0)}
+function applyRoute(){const r=parseHash();const prev=UI.view;UI.view=r.view;UI.params=r.params;if(prev==='scanner'&&UI.view!=='scanner'&&typeof Scanner!=='undefined')Scanner.stop();UI.inv._lastParam=undefined;closeAllModals();render(true);window.scrollTo(0,0)}
 
 /* ---------- Event-delegatie ---------- */
 const A={};
@@ -1346,7 +1373,12 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
     if(this.detector){const res=await this.detector.detect(src);return res&&res.length?res[0].rawValue:null}
     let c=src;if(!(src instanceof HTMLCanvasElement)){c=document.createElement('canvas');const w=src.videoWidth||src.naturalWidth||src.width,h=src.videoHeight||src.naturalHeight||src.height;if(!w)return null;const sc=Math.min(1,1280/Math.max(w,h));c.width=Math.round(w*sc);c.height=Math.round(h*sc);c.getContext('2d').drawImage(src,0,0,c.width,c.height)}
     const {Z,r}=this.zx;try{const lum=new Z.HTMLCanvasElementLuminanceSource(c);const bmp=new Z.BinaryBitmap(new Z.HybridBinarizer(lum));const out=r.decodeWithState(bmp);return out?out.getText():null}catch(e){return null}finally{try{r.reset()}catch(e){}}},
-  async start(){const video=$('#scan-video');if(!video)return;const cap=this.capabilities();
+  async start(){if(this.running||this.starting)return;this.starting=true;try{return await this._start()}finally{this.starting=false}},
+  camMode(){return ['barcode','uit','ocr','etiket','voedsel'].includes(UI.scan.mode)},
+  autoOn(){return LS.get('autoCam',true)!==false},
+  auto(){if(!this.autoOn()||this.running||this.starting||this.autoBlocked||!this.camMode()||UI.view!=='scanner'||Modals.length||document.hidden||!$('#scan-video'))return;const cap=this.capabilities();if(!cap.camera||!cap.secure)return;
+    this.start().catch(e=>{this.autoBlocked=true;this.setMsg('');toast(e.message+' Tik op "Camera starten" om het opnieuw te proberen.','error')})},
+  async _start(){const video=$('#scan-video');if(!video)return;const cap=this.capabilities();
     if(!cap.camera)throw new Error(cap.secure?'Deze browser geeft geen toegang tot de camera. Gebruik "Foto van barcode" of typ de code in.':'De camera werkt alleen via https of localhost. Open de app via een https-adres, of gebruik "Foto van barcode".');
     this.setMsg('Camera starten…');
     try{this.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:this.deviceId?{deviceId:{exact:this.deviceId}}:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}})}
@@ -1356,7 +1388,7 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
     this.paintControls();
     if(UI.scan.mode==='barcode'||UI.scan.mode==='uit'){try{await this.ensureDecoder()}catch(e){this.setMsg('');toast('Barcodeherkenning niet beschikbaar: '+e.message+'. Typ de code in of gebruik een aangesloten scanner.','error');return}
       this.setMsg((UI.scan.mode==='uit'?'📤 Uit voorraad — richt op de barcode van de lege verpakking':'Richt de camera op de barcode of QR-code')+(this.detector?'':' (ZXing)'));const tick=async()=>{if(!this.running)return;if(!this.busy&&video.readyState>=2){this.busy=true;try{const code=await this.decode(video);if(code)this.onCode(code,'camera')}catch(e){}this.busy=false}this.loop=setTimeout(tick,this.detector?180:320)};tick()}
-    else this.setMsg('Richt op het etiket en tik op "Foto nemen"')},
+    else this.setMsg(UI.scan.mode==='voedsel'?'Richt op het voedsel en tik op "Foto nemen"':'Richt op het etiket en tik op "Foto nemen"')},
   stop(){this.running=false;clearTimeout(this.loop);if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}this.track=null;this.torch=false;const v=$('#scan-video');if(v)v.srcObject=null;this.paintControls();this.setMsg('')},
   setMsg(t){const el=$('#cam-msg');if(el){el.textContent=t;el.style.display=t?'block':'none'}},
   paintControls(){const b=$('#cam-controls');if(!b)return;const caps=this.track&&this.track.getCapabilities?this.track.getCapabilities():{};
@@ -1366,12 +1398,13 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
     if(/^\d+$/.test(code)&&[8,12,13,14].includes(code.length)&&!validEAN(code)){return}
     this.last={code,at:now};if(navigator.vibrate)try{navigator.vibrate(60)}catch(e){}beep();this.wasRunning=this.running;this.stop();lookupBarcode(code,src)},
   refresh(){const box=$('#scan-session');if(box)box.innerHTML=sessionHtml()},
-  mounted(){this.paintControls();this.setMsg('');const ph=$('#cam-placeholder');if(ph)ph.style.display=this.running?'none':'flex'}};
+  mounted(){this.paintControls();this.setMsg('');const ph=$('#cam-placeholder');if(ph)ph.style.display=this.running?'none':'flex';setTimeout(()=>this.auto(),60)}};
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(Scanner.running){Scanner.stop()}}else setTimeout(()=>Scanner.auto(),200)});
 function beep(){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const ctx=Scanner._ac||(Scanner._ac=new C());const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=1250;g.gain.value=0.06;o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.09)}catch(e){}}
-A.camStart=async()=>{try{await Scanner.start()}catch(e){Scanner.stop();throw e}};A.camStop=()=>Scanner.stop();
+A.camStart=async()=>{Scanner.autoBlocked=false;try{await Scanner.start()}catch(e){Scanner.stop();throw e}};A.camStop=()=>Scanner.stop();
 A.camTorch=async()=>{if(!Scanner.track)return;Scanner.torch=!Scanner.torch;try{await Scanner.track.applyConstraints({advanced:[{torch:Scanner.torch}]})}catch(e){Scanner.torch=false;toast('Zaklamp niet beschikbaar.','error')}Scanner.paintControls()};
 A.camDevice=async(d,el)=>{Scanner.deviceId=el.value;if(Scanner.running){Scanner.stop();await Scanner.start()}};
-A.camSnap=async()=>{const v=$('#scan-video');if(!v||!v.videoWidth)throw new Error('Camera is nog niet klaar.');const c=document.createElement('canvas');const sc=Math.min(1,1800/Math.max(v.videoWidth,v.videoHeight));c.width=Math.round(v.videoWidth*sc);c.height=Math.round(v.videoHeight*sc);c.getContext('2d').drawImage(v,0,0,c.width,c.height);Scanner.wasRunning=true;Scanner.stop();await runOCR(c,c.toDataURL('image/jpeg',0.8))};
+A.camSnap=async()=>{const v=$('#scan-video');if(!v||!v.videoWidth)throw new Error('Camera is nog niet klaar.');const c=document.createElement('canvas');const sc=Math.min(1,1800/Math.max(v.videoWidth,v.videoHeight));c.width=Math.round(v.videoWidth*sc);c.height=Math.round(v.videoHeight*sc);c.getContext('2d').drawImage(v,0,0,c.width,c.height);Scanner.wasRunning=true;Scanner.stop();if(UI.scan.mode==='voedsel')await runFood(c);else await runOCR(c,c.toDataURL('image/jpeg',0.8))};
 
 /* Toetsenbord-scanners (USB/Bluetooth werken als toetsenbord) */
 const Wedge={buf:'',t:0};
@@ -1388,14 +1421,14 @@ function qrInfo(sc,src){const url=sc.kind==='url'?(/^www\./i.test(sc.url)?'https
   openModal({title:sc.kind==='url'?'QR-code zonder productcode':'Code zonder productnummer',gid:'dialog-qr',
     body:'<p style="margin-top:0">'+(sc.kind==='url'?'Deze QR-code bevat een link naar een website, maar geen productnummer. De app kan het product er dus niet mee opzoeken.':'Deze code bevat tekst, maar geen productnummer. De app kan het product er dus niet mee opzoeken.')+'</p><div class="note"><div class="small muted">Inhoud van de code</div><div class="mono small" style="word-break:break-all">'+esc(sc.raw.slice(0,300))+'</div></div><p class="muted small" style="margin-bottom:0">Scan in de plaats de gewone streepjescode op de verpakking. QR-codes met een productnummer (GS1-QR-codes) worden wel herkend, inclusief houdbaarheidsdatum en lotnummer als die erin staan.</p>',
     foot:(url?'<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Link openen</a>':'')+'<button type="button" class="btn primary" data-act="closeModal">'+(resume?'Opnieuw scannen':'Sluiten')+'</button>',
-    onClose:()=>{Scanner.last={code:'',at:0};if(resume&&UI.view==='scanner')setTimeout(()=>A.camStart().catch(()=>{}),150)}})}
+    onClose:()=>{Scanner.last={code:'',at:0};if(UI.view==='scanner')setTimeout(()=>{if(Scanner.autoOn())Scanner.auto();else if(resume)A.camStart().catch(()=>{})},150)}})}
 async function lookupBarcode(code,src,forceAdd){const sc=parseScan(code);if(sc.kind==='url'||sc.kind==='text'){qrInfo(sc,src);return}if(sc.kind==='empty')return;
   const extra=sc.kind==='gs1'?gs1Extra(sc):{};const qn=sc.kind==='gs1'?gs1Note(sc):'';if(sc.kind==='gs1')code=sc.code;
   if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){outScan(code,src);return}toast((sc.kind==='gs1'?'QR-code herkend (product '+code+')':'Barcode '+code+' herkend')+' — opzoeken…');const local=M.findProductByBarcode(code);
   if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);openConfirm(Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':'barcode'},extra,qn?{info:qn}:{}));return}
   const r=await fetchOFF(code);
   if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:'Open Food Facts',info:'Gevonden in Open Food Facts'+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
-  openConfirm(Object.assign({barcode:code,source:'barcode',info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Vul de gegevens één keer in — de app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
+  openConfirm(Object.assign({barcode:code,source:'barcode',unknownBarcode:true,info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Fotografeer hieronder de verpakking, dan vult de app in wat het zou kunnen zijn — of vul de gegevens zelf in. De app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
 A.eanLookup=()=>{const v=($('#ean-in').value||'').replace(/\s+/g,'');if(!v)throw new Error('Geef een barcode in.');if(/^\d+$/.test(v)&&[8,12,13,14].includes(v.length)&&!validEAN(v))toast('Let op: het controlecijfer van deze EAN klopt niet — controleer de code.','error');$('#ean-in').value='';Scanner.last={code:'',at:0};lookupBarcode(v,'manueel')};
 A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,1600,0.85);const code=await Scanner.decode(canvas);if(!code)throw new Error('Geen barcode of QR-code gevonden op de foto. Zorg dat de code scherp, recht en goed verlicht is, of typ de code in.');Scanner.onCode(code,'foto')};
 
@@ -1403,18 +1436,21 @@ A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)ret
 function preprocess(canvas,hand){const c=document.createElement('canvas');const sc=Math.min(1,(hand?1600:2000)/Math.max(canvas.width,canvas.height));c.width=Math.round(canvas.width*sc);c.height=Math.round(canvas.height*sc);const ctx=c.getContext('2d');ctx.drawImage(canvas,0,0,c.width,c.height);
   const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;let mn=255,mx=0;for(let i=0;i<d.length;i+=4){const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=g;if(g<mn)mn=g;if(g>mx)mx=g}const rg=Math.max(1,mx-mn);
   for(let i=0;i<d.length;i+=4){let g=(d[i]-mn)*255/rg;if(hand)g=g<140?0:255;d[i]=d[i+1]=d[i+2]=g}ctx.putImageData(im,0,0);return c}
-function ocrProgress(p,txt){const b=$('#ocr-prog');if(!b)return;b.style.display='block';b.querySelector('i').style.width=Math.round(p*100)+'%';$('#ocr-status').textContent=txt||''}
+function ocrProgress(p,txt){const b=$('.modal #ocr-prog')||$('#ocr-prog');if(!b)return;b.style.display='block';b.querySelector('i').style.width=Math.round(p*100)+'%';$('#ocr-status').textContent=txt||''}
 async function getOcrWorker(){if(Scanner.ocrWorker)return Scanner.ocrWorker;ocrProgress(0.02,'OCR-engine laden (eerste keer ±10–20 MB, daarna sneller)…');
   await loadScript(TESS_URL);if(!window.Tesseract)throw new Error('Tesseract.js niet beschikbaar.');
   Scanner.ocrWorker=await Tesseract.createWorker(['nld','eng','fra'],1,{logger:m=>{if(m&&m.progress!=null)ocrProgress(m.progress,m.status==='recognizing text'?'Tekst herkennen… '+Math.round(m.progress*100)+'%':'Voorbereiden: '+(m.status||''))}});return Scanner.ocrWorker}
-async function runOCR(canvas,dataUrl){const hand=UI.scan.mode==='etiket';let code=null;
-  if(UI.scan.mode==='ocr'){try{code=await Scanner.decode(canvas)}catch(e){}}
-  let text='',lines=[],conf=null,err='';
+async function ocrRead(canvas,hand){let text='',lines=[],conf=null,err='';
   try{const w=await getOcrWorker();ocrProgress(0.05,'Tekst herkennen…');const res=await w.recognize(preprocess(canvas,hand));text=res.data.text||'';conf=res.data.confidence;
     (res.data.lines||[]).forEach(l=>lines.push({text:l.text.trim(),confidence:l.confidence,height:(l.bbox?l.bbox.y1-l.bbox.y0:0)}))}
   catch(e){err=e.message||String(e)}
-  ocrProgress(1,err?'':'Klaar');setTimeout(()=>{const b=$('#ocr-prog');if(b)b.style.display='none'},800);
-  const parsed=parseLabel(text,{handwritten:hand,lines,brands:M.products().map(p=>p.brand).filter(Boolean)});const f=parsed.fields;const thumbUrl=await new Promise(r=>{const c=document.createElement('canvas');const sc=Math.min(1,360/Math.max(canvas.width,canvas.height));c.width=canvas.width*sc;c.height=canvas.height*sc;c.getContext('2d').drawImage(canvas,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',0.72))});
+  ocrProgress(1,err?'':'Klaar');setTimeout(()=>{const b=$('.modal #ocr-prog')||$('#ocr-prog');if(b)b.style.display='none'},800);
+  const parsed=parseLabel(text,{handwritten:hand,lines,brands:M.products().map(p=>p.brand).filter(Boolean)});
+  return {text,lines,conf,err,parsed,thumb:thumbOf(canvas)}}
+function thumbOf(canvas){try{const c=document.createElement('canvas');const sc=Math.min(1,360/Math.max(canvas.width||1,canvas.height||1));c.width=Math.round((canvas.width||1)*sc);c.height=Math.round((canvas.height||1)*sc);c.getContext('2d').drawImage(canvas,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.72)}catch(e){return ''}}
+async function runOCR(canvas,dataUrl){const hand=UI.scan.mode==='etiket';let code=null;
+  if(UI.scan.mode==='ocr'){try{code=await Scanner.decode(canvas)}catch(e){}}
+  const o=await ocrRead(canvas,hand);const {text,conf,err,parsed}=o;const f=parsed.fields;const thumbUrl=o.thumb;
   let pref={source:hand?'OCR etiket':'OCR verpakking',ocrText:text,ocrNotes:parsed.notes,ocrConf:conf,photoCandidate:thumbUrl,usePhoto:!hand,needsCheck:conf!=null&&conf<60};
   Object.assign(pref,{name:f.name||'',brand:f.brand||'',qty:f.qty,unit:f.unit,category:f.category||'',sub:f.sub||'',expiryDate:f.expiryDate||'',dateType:f.dateType||'',freezeDate:f.freezeDate||'',batch:f.batch||''});
   if(code){const local=M.findProductByBarcode(code);if(local)Object.assign(pref,prefFromProduct(local),{expiryDate:pref.expiryDate,dateType:pref.dateType,freezeDate:pref.freezeDate,batch:pref.batch});else{const r=await fetchOFF(code);if(r.status==='ok'){const d=r.data;Object.assign(pref,{name:d.name||pref.name,brand:d.brand||pref.brand,category:d.category||pref.category,sub:d.sub||pref.sub,qty:d.qty||pref.qty,unit:d.unit||pref.unit,photo:d.photo})}}pref.barcode=code}
@@ -1434,11 +1470,14 @@ function openConfirm(pref,ctx){pref=Object.assign({},pref);const inScanner=UI.vi
   if(pref.locationId&&M.isFreezer(pref.locationId)&&!pref.freezeDate&&pref.source!=='OCR etiket')pref.freezeDate=todayStr();
   if(pref.locationId&&M.isFreezer(pref.locationId)&&!pref.expiryDate){pref.expiryDate=freezeSuggest(pref,pref.freezeDate||todayStr());pref.dateType='EIGEN';pref.autoExp=true}
   openModal({title:pref.existingProductId?'Partij toevoegen':'Product bevestigen',gid:'dialog-confirm-product',wide:true,body:confirmBody,foot:()=>'<button type="button" class="btn" data-act="closeModal">Annuleren</button>'+(CF.ctx==='scanner'?'<button type="button" class="btn" data-act="cfSave" data-next="0">Opslaan</button><button type="button" class="btn primary" data-act="cfSave" data-next="1">Opslaan &amp; volgende</button>':'<button type="button" class="btn primary" data-act="cfSave" data-next="0">Opslaan</button>'),
-    onClose:()=>{if(CF&&CF.ctx==='scanner'&&!CF.saved&&Scanner.wasRunning&&UI.view==='scanner')setTimeout(()=>A.camStart().catch(()=>{}),150)}})}
+    onClose:()=>{const c=CF;if(c&&c.ctx==='scanner'&&UI.view==='scanner'){const resume=!c.saved&&Scanner.wasRunning;setTimeout(()=>{if(Scanner.autoOn())Scanner.auto();else if(resume)A.camStart().catch(()=>{})},150)}}});
+  if(typeof A11y!=='undefined')A11y.confirmOpened()}
 function subOptions(cat,cur){const c=M.categories().find(x=>x.name===cat);return '<option value="">—</option>'+sel(cur||'',(c?c.subs:[]))}
 function confirmBody(){const p=CF.pref;const ex=p.existingProductId&&M.S.products[p.existingProductId];const cats=M.categories();
   let h='';if(p.info)h+='<div class="note'+(p.infoKind?' '+p.infoKind:'')+'">'+esc(p.info)+'</div>';
   if(p.ocrNotes&&p.ocrNotes.length)h+='<div class="note warn">'+p.ocrNotes.map(esc).join('<br>')+'</div>';
+  if(typeof A11y!=='undefined'&&A11y.get().speak)h+='<div class="row"><button type="button" class="btn sm" data-act="cfSpeak">'+ico('record_voice_over','🔊')+'Voorlezen</button></div>';
+  h+=aiPanel();
   if(ex){const ls=M.fifoLots(ex.id);h+='<div class="note">✓ Gekend product: <b>'+esc(ex.name)+'</b> — nu '+esc(fmtQty(M.productTotal(ex.id),ex.unit))+' in huis'+(ls.length?' in '+plural(ls.length,'partij','partijen'):'')+'.'+(ls.length?'<div class="row" style="margin-top:8px"><label class="check"><input type="radio" name="mode" value="new" checked> Nieuwe partij (aanbevolen — eigen vervaldatum)</label>'+ls.slice(0,4).map(l=>'<label class="check"><input type="radio" name="mode" value="'+esc(l.id)+'"> Aanvullen bij '+esc(fmtQty(l.qty,l.unit))+' · '+esc(M.locName(l.locationId))+'</label>').join('')+'</div>':'')+'</div>'}
   h+='<div class="row nowrap" style="align-items:flex-start;gap:14px"><div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div class="thumb" id="cf-thumb" style="width:84px;height:84px;flex-basis:84px;font-size:34px">'+(CF.photo?'<img src="'+esc(CF.photo)+'" alt="" onerror="this.remove()">':prodEmoji(p))+'</div><label class="btn sm" style="cursor:pointer">📷 Foto<input type="file" accept="image/*" capture="environment" hidden data-change="cfPhoto"></label>'+(CF.photo?'<button type="button" class="btn sm ghost" data-act="cfPhotoDel">Verwijder</button>':'')+'</div>';
   h+='<div class="grid2 grow"><div class="field span2"><label>Productnaam *</label><input name="name" class="inp" value="'+esc(p.name||'')+'" '+(p.name?'':'autofocus')+' placeholder="bv. Rundergehakt"></div><div class="field"><label>Merk</label><input name="brand" class="inp" value="'+esc(p.brand||'')+'"></div><div class="field"><label>Barcode / EAN</label><input name="barcode" class="inp mono" inputmode="numeric" value="'+esc(p.barcode||'')+'"></div>'+
@@ -1484,20 +1523,22 @@ A.epPhotoDel=d=>{M.saveProduct({id:d.id,photo:''});toast('Foto verwijderd.')};
 A.editProductOk=d=>{const f=formData($('.modal'));const old=M.S.products[d.id];if(old.unit!==f.unit&&M.lotsOf(d.id).length)toast('Let op: bestaande partijen behouden hun eigen eenheid.');M.saveProduct(Object.assign({id:d.id},f,{minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,openShelfDays:Number(f.openShelfDays)||0}));closeModal();toast('Product opgeslagen.')};
 
 /* ---------- Scanner-weergave ---------- */
-const MODES=[['barcode','🔖','Barcode scannen','Barcode of QR-code via camera, foto of scanner'],['zoeken','🔎','Online zoeken','Op naam of merk in Open Food Facts'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
+function scanLocBar(){const cam=['barcode','uit','ocr','etiket','voedsel'].includes(UI.scan.mode);return '<div class="card scan-loc" data-glean-id="scan-default-loc"><div class="row" style="gap:12px;align-items:center"><label for="scan-loc" class="lbl" style="margin:0">'+(UI.scan.mode==='uit'?'Afboeken uit':'Opslaan in')+'</label><select id="scan-loc" class="inp grow" style="min-width:180px;flex:1" data-change="scanLoc"><option value="">Automatisch voorstellen</option>'+sel(UI.scan.loc||'',M.locations().map(l=>[l.id,(l.icon?l.icon+' ':'')+l.name]))+'</select>'+(cam?'<label class="check" style="white-space:nowrap"><input type="checkbox" data-change="setAutoCam" '+(Scanner.autoOn()?'checked':'')+'> Camera automatisch starten</label>':'')+'</div><div class="hint" style="margin-top:6px">'+(UI.scan.loc?'Elk product gaat standaard naar <b>'+esc(M.locName(UI.scan.loc))+'</b>. In het bevestigingsvenster kun je per product nog een andere plaats kiezen.':'De app stelt per product een plaats voor (bv. diepvries voor diepvriesproducten). In het bevestigingsvenster kun je altijd een andere plaats kiezen.')+'</div></div>'}
+A.setAutoCam=(d,el)=>{LS.set('autoCam',!!el.checked);if(el.checked){Scanner.autoBlocked=false;Scanner.auto()}toast(el.checked?'De camera start voortaan automatisch.':'De camera start niet meer automatisch.')};
+const MODES=[['barcode','🔖','Barcode scannen','Barcode of QR-code via camera, foto of scanner'],['zoeken','🔎','Online zoeken','Op naam of merk in Open Food Facts'],['uit','📤','Uit voorraad','Lege verpakking scannen'],['ocr','📦','Verpakking fotograferen','Naam, merk, gewicht, datum via OCR'],['etiket','🏷️','Etiket of handschrift','Diepvrieslabel, datumsticker'],['voedsel','🍎','Voedsel herkennen','Fruit, groente of gerecht zonder barcode'],['manueel','✍️','Manueel invoeren','Of bestaande voorraad aanvullen']];
 function sessionHtml(){const s=UI.scan.session;if(!s.length)return '<div class="empty" style="padding:12px">Nog niets gescand in deze sessie.</div>';return s.slice(0,30).map(x=>'<div class="li" style="padding:8px 4px"><div class="grow small"><b>'+esc(x.label)+'</b><div class="muted">'+x.at.toTimeString().slice(0,5)+'</div></div><button type="button" class="btn sm" data-act="product" data-id="'+esc(x.pid)+'">Bekijk</button></div>').join('')}
 VIEW_RENDER.scanner=function(){if(UI.params.mode&&MODES.some(m=>m[0]===UI.params.mode))UI.scan.mode=UI.params.mode;if(UI.params.loc&&M.S.locations[UI.params.loc])UI.scan.loc=UI.params.loc;const mode=UI.scan.mode;const cap=Scanner.capabilities();
   let h='<div id="scanner-root"><div class="modes" role="group" aria-label="Scanmodus">'+MODES.map(m=>'<button type="button" class="mode" aria-pressed="'+(mode===m[0])+'" data-act="setScanMode" data-mode="'+m[0]+'" data-glean-id="scanmode-'+m[0]+'"><span class="m-ico">'+m[1]+'</span><b>'+m[2]+'</b><span>'+m[3]+'</span></button>').join('')+'</div>';
-  h+='<div class="dash"><div class="c8 stack">';
+  h+='<div class="dash"><div class="c8 stack">'+scanLocBar();
   if(mode==='zoeken'){h+=searchPanel()}
   else if(mode==='manueel'){h+='<div class="card" data-glean-id="scan-manual"><h2 class="panel-title">Nieuw product</h2><p class="muted small" style="margin-top:0">Voeg een product toe zonder barcode, bv. verse groenten, restjes of zelfgemaakte soep.</p><button type="button" class="btn primary lg" data-act="cfNew">✍️ Product manueel invoeren</button></div>'+
     '<div class="card" data-glean-id="scan-topup"><h2 class="panel-title">Bestaande voorraad aanvullen</h2><input id="topup-q" class="inp" placeholder="Zoek een product dat je al hebt…" value="'+esc(UI.scan.tq||'')+'" data-input="scanTopupQ"><div class="list" id="topup-list" style="margin-top:8px">'+topupList()+'</div></div>'}
   else{h+='<div class="card" data-glean-id="scan-camera"><div class="cam"><video id="scan-video" playsinline muted></video>'+(mode==='barcode'||mode==='uit'?'<div class="reticle"></div>':'')+'<div id="cam-placeholder" class="loading" style="position:absolute;inset:0;min-height:0;text-align:center;padding:16px"><div style="font-size:40px">'+(mode==='uit'?'📤':mode==='barcode'?'🔖':'📷')+'</div><div>'+(cap.camera?(mode==='uit'?'Start de camera en scan de lege verpakking':mode==='barcode'?'Start de camera en richt op de barcode':'Start de camera of kies een foto'):'Camera niet beschikbaar in deze omgeving')+'</div></div><div id="cam-msg" class="cam-msg" style="display:none"></div></div><div class="row" id="cam-controls" style="margin-top:10px"></div>';
     if(!cap.secure)h+='<div class="note warn" style="margin-top:10px">De camera werkt alleen via <b>https://</b> of localhost. "Foto" hieronder werkt wel: je telefoon opent dan de camera-app.</div>';
     if(mode==='barcode'||mode==='uit')h+=(mode==='uit'?'<div class="note" style="margin-top:12px" data-glean-id="scan-out-info"><b>📤 Lege verpakking scannen</b><br>Scan de barcode voor je de verpakking weggooit. De app boekt de juiste partij af — eerst een geopende, anders de partij die het eerst vervalt — en zet het product op je boodschappenlijst als het op is of onder het minimum zakt. Je kunt kiezen: helemaal op, een deel, of weggegooid.</div>':'')+'<div class="grid2" style="margin-top:12px;align-items:end"><label class="btn" style="cursor:pointer">📸 Foto van barcode<input type="file" accept="image/*" capture="environment" hidden data-change="barcodePhoto"></label><div class="row nowrap"><input id="ean-in" class="inp mono" inputmode="numeric" placeholder="Barcode intypen…" data-enter="eanLookup"><button type="button" class="btn" data-act="eanLookup">Zoek</button></div></div><div class="hint" style="margin-top:8px">🔌 Een aangesloten USB- of Bluetooth-barcodescanner werkt als toetsenbord: scan gewoon terwijl dit scherm open is. Productgegevens komen uit <b>Open Food Facts</b>; gescande producten worden lokaal onthouden.</div>';
-    else h+='<div class="row" style="margin-top:12px"><label class="btn primary" style="cursor:pointer">📷 Foto maken of kiezen<input type="file" accept="image/*" capture="environment" hidden data-change="ocrPhoto"></label></div><div id="ocr-prog" style="display:none;margin-top:10px"><div class="progress"><i style="width:0"></i></div><div id="ocr-status" class="small muted" style="margin-top:4px"></div></div><div class="hint" style="margin-top:8px">'+(mode==='etiket'?'Fotografeer het etiket recht van voren, met veel licht. Gedrukte datums worden goed herkend; handschrift slechts gedeeltelijk — je controleert alles voor het opslaan.':'Fotografeer de voorkant (naam, merk, gewicht) of de zijde met de datum. Staat er een barcode op de foto, dan wordt die ook gelezen.')+' OCR draait lokaal in je browser via Tesseract.js (eerste keer downloaden van de taalbestanden).</div>';
+    else h+='<div class="row" style="margin-top:12px"><label class="btn primary" style="cursor:pointer">📷 Foto maken of kiezen<input type="file" accept="image/*" capture="environment" hidden data-change="'+(mode==='voedsel'?'foodPhoto':'ocrPhoto')+'"></label></div><div id="ocr-prog" style="display:none;margin-top:10px"><div class="progress"><i style="width:0"></i></div><div id="ocr-status" class="small muted" style="margin-top:4px"></div></div><div class="hint" style="margin-top:8px">'+(mode==='voedsel'?'Fotografeer één product (bv. een banaan, broccoli of een pizza) van dichtbij, op een rustige achtergrond. De herkenning draait op je toestel: de foto wordt niet doorgestuurd. Ze kent zo’n 60 soorten fruit, groenten, paddenstoelen, gerechten en dranken — voor vlees, kaas of zuivel typ je de naam beter zelf.':(mode==='etiket'?'Fotografeer het etiket recht van voren, met veel licht. Gedrukte datums worden goed herkend; handschrift slechts gedeeltelijk — je controleert alles voor het opslaan.':'Fotografeer de voorkant (naam, merk, gewicht) of de zijde met de datum. Staat er een barcode op de foto, dan wordt die ook gelezen.')+' OCR draait lokaal in je browser via Tesseract.js (eerste keer downloaden van de taalbestanden).')+'</div>';
     h+='</div>'}
-  h+='</div><div class="c4 stack"><div class="card" data-glean-id="scan-default-loc"><h2 class="panel-title">Standaard opslagplaats</h2><select class="inp" data-change="scanLoc"><option value="">Automatisch voorstellen</option>'+sel(UI.scan.loc||'',M.locations().map(l=>[l.id,l.name]))+'</select><div class="hint" style="margin-top:6px">Handig als je een volledige kast of diepvries na elkaar scant.</div></div><div class="card" data-glean-id="scan-session"><div class="row between"><h2 class="panel-title" style="margin:0">Deze scansessie</h2><span class="small muted">'+UI.scan.session.length+'</span></div><div class="session list" id="scan-session" style="margin-top:8px">'+sessionHtml()+'</div></div></div></div></div>';
+  h+='</div><div class="c4 stack"><div class="card" data-glean-id="scan-session"><div class="row between"><h2 class="panel-title" style="margin:0">Deze scansessie</h2><span class="small muted">'+UI.scan.session.length+'</span></div><div class="session list" id="scan-session" style="margin-top:8px">'+sessionHtml()+'</div></div></div></div></div>';
   return h};
 function topupList(){const q=norm(UI.scan.tq||'');const ps=M.products().filter(p=>!q||norm(p.name+' '+(p.brand||'')).includes(q)).slice(0,12);if(!ps.length)return '<div class="empty" style="padding:10px">Geen producten gevonden.</div>';
   return ps.map(p=>'<div class="li">'+thumb(p)+'<div class="grow"><div class="main-t">'+esc(p.name)+'</div><div class="sub-t">nu '+esc(fmtQty(M.productTotal(p.id),p.unit))+'</div></div><button type="button" class="btn sm primary" data-act="addLotScan" data-id="'+esc(p.id)+'">+ Aanvullen</button></div>').join('')}
@@ -1507,7 +1548,7 @@ A.cfNew=()=>openConfirm({source:'manueel'},'scanner');
 A.setScanMode=d=>{Scanner.stop();UI.scan.mode=d.mode;go('scanner',{mode:d.mode})};
 A.scanMode=d=>{go('scanner',{mode:d.mode});if(d.mode==='manueel')setTimeout(()=>openConfirm({source:'manueel'},'scanner'),180)};
 A.scanTo=d=>go('scanner',{mode:'barcode',loc:d.loc});
-A.scanLoc=(d,el)=>{UI.scan.loc=el.value};
+A.scanLoc=(d,el)=>{UI.scan.loc=el.value;const h=el.closest('.scan-loc');const box=h&&h.querySelector('.hint');if(box)box.innerHTML=el.value?'Elk product gaat standaard naar <b>'+esc(M.locName(el.value))+'</b>. In het bevestigingsvenster kun je per product nog een andere plaats kiezen.':'De app stelt per product een plaats voor. In het bevestigingsvenster kun je altijd een andere plaats kiezen.'};
 
 document.addEventListener('change',e=>{if(e.target&&e.target.name==='punit'&&CF)CF.pref.punitTouched=true});
 
@@ -1645,6 +1686,76 @@ A.srPick=d=>{const it=SR.items.find(x=>x.code===d.code);if(!it)return;const loca
   const same=M.findProductByName(it.name,it.brand);
   openConfirm(Object.assign({},same?prefFromProduct(same):{},{name:it.name,brand:it.brand,category:it.category,sub:it.sub,barcode:it.code,photo:it.photo,qty:it.qty,unit:it.unit,health:it.health,source:'Open Food Facts',
     info:'Gevonden via online zoeken'+(it.quantityLabel?' · inhoud '+it.quantityLabel:'')+healthLine(it.health)+'. Controleer de gegevens.',existingProductId:same?same.id:''}))};
+
+/* ---------- Voedsel herkennen (op het toestel) + hulp bij onbekende producten ---------- */
+const TF_URL='https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
+const MOBILENET_URL='https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js';
+/* ImageNet-klassen die voedsel zijn -> Nederlandse productnaam */
+const FOOD={'granny smith':'Appel','strawberry':'Aardbeien','orange':'Sinaasappel','lemon':'Citroen','fig':'Vijgen','pineapple':'Ananas','banana':'Bananen','jackfruit':'Jackfruit','custard apple':'Cherimoya','pomegranate':'Granaatappel',
+  'head cabbage':'Witte kool','broccoli':'Broccoli','cauliflower':'Bloemkool','zucchini':'Courgette','spaghetti squash':'Spaghettipompoen','acorn squash':'Pompoen','butternut squash':'Butternutpompoen','cucumber':'Komkommer','artichoke':'Artisjok','bell pepper':'Paprika','cardoon':'Kardoen','corn':'Maïs','ear':'Maïskolf',
+  'mushroom':'Champignons','agaric':'Paddenstoelen','bolete':'Eekhoorntjesbrood','hen-of-the-woods':'Maitake','hip':'Rozenbottels',
+  'guacamole':'Guacamole','consomme':'Bouillon','hot pot':'Stoofpot','trifle':'Trifle','ice cream':'Roomijs','ice lolly':'Waterijsjes','french loaf':'Stokbrood','bagel':'Bagels','pretzel':'Pretzels','cheeseburger':'Hamburgers','hotdog':'Hotdogs','mashed potato':'Puree','carbonara':'Pasta carbonara','chocolate sauce':'Chocoladesaus','dough':'Deeg','meat loaf':'Gehaktbrood','pizza':'Pizza','potpie':'Pastei','burrito':'Burrito','honeycomb':'Honing',
+  'red wine':'Rode wijn','espresso':'Koffie','eggnog':'Advocaat','beer bottle':'Bier','wine bottle':'Wijn','pop bottle':'Frisdrank','water bottle':'Water',
+  'american lobster':'Kreeft','spiny lobster':'Langoest','crayfish':'Rivierkreeft','dungeness crab':'Krab','rock crab':'Krab','king crab':'Koningskrab'};
+const Vision={model:null,loading:null,
+  async load(){if(this.model)return this.model;
+    if(!this.loading)this.loading=(async()=>{ocrProgress(0.1,'Herkenningsmodel laden (eerste keer ±20 MB, daarna offline)…');await loadScript(TF_URL);ocrProgress(0.4,'Herkenningsmodel laden…');await loadScript(MOBILENET_URL);
+      if(!window.mobilenet)throw new Error('herkenningsmodel niet beschikbaar');ocrProgress(0.6,'Model voorbereiden…');const m=await window.mobilenet.load({version:2,alpha:1});this.model=m;return m})().catch(e=>{this.loading=null;throw e});
+    return this.loading},
+  async classify(canvas){const m=await this.load();ocrProgress(0.85,'Voedsel herkennen…');const preds=await m.classify(canvas,10);ocrProgress(1,'Klaar');setTimeout(()=>{const b=$('.modal #ocr-prog')||$('#ocr-prog');if(b)b.style.display='none'},800);return preds||[]}};
+function foodMatches(preds){const out=[];(preds||[]).forEach(p=>{const names=String(p.className||'').toLowerCase().split(',').map(s=>s.trim());
+    for(const n of names){const nm=FOOD[n];if(nm){if(!out.some(o=>o.name===nm))out.push({name:nm,prob:Number(p.probability)||0,label:n});break}}});
+  return out.filter(o=>o.prob>=0.05).slice(0,4)}
+function foodNames(list){return list.map(f=>f.name+' ('+Math.round(f.prob*100)+'%)').join(', ')}
+async function recogniseFood(canvas){try{const preds=await Vision.classify(canvas);return {foods:foodMatches(preds),err:''}}
+  catch(e){const b=$('.modal #ocr-prog')||$('#ocr-prog');if(b)b.style.display='none';return {foods:[],err:e.message||String(e)}}}
+/* scanmodus "Voedsel herkennen" */
+async function runFood(canvas){const r=await recogniseFood(canvas);const best=r.foods[0];const thumb=thumbOf(canvas);
+  const pref={source:'voedselherkenning',photoCandidate:thumb,usePhoto:true,name:best&&best.prob>=0.25?best.name:'',qty:1,unit:'stuks',aiFoods:r.foods,needsCheck:false};
+  if(pref.name){const ex=M.findProductByName(pref.name,'');if(ex)Object.assign(pref,prefFromProduct(ex),{photoCandidate:thumb})}
+  pref.info=r.err?'Voedselherkenning niet beschikbaar ('+r.err+'). Het model wordt de eerste keer van internet geladen — controleer je verbinding. Typ de naam zelf in.'
+    :best?(pref.name?'Herkend: '+best.name+' ('+Math.round(best.prob*100)+'% zeker). Klopt het niet? Kies hieronder een ander voorstel of typ de naam.':'Niet zeker genoeg. Kies een voorstel hieronder of typ de naam.')
+    :'Geen voedsel herkend. Fotografeer van dichterbij, met één product in beeld — of typ de naam zelf.';
+  pref.infoKind=r.err||!best?'warn':'';openConfirm(pref)}
+A.foodPhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;Scanner.stop();const {canvas}=await resizeImage(f,1024,0.85);await runFood(canvas)};
+/* hulppaneel in het bevestigingsvenster */
+function aiPanel(){const p=CF.pref;if(p.existingProductId)return '';const ai=CF.ai||{};
+  const unknown=p.unknownBarcode;let h='<div class="card ai-help" data-glean-id="cf-ai"><div class="lbl" style="margin-bottom:4px">'+(unknown?'Onbekend product — laat de app helpen':'Hulp bij invullen')+'</div>';
+  h+='<div class="small" style="margin-bottom:8px">'+(unknown?'Fotografeer de <b>voorkant van de verpakking</b>: de app leest naam, merk en gewicht en zoekt welk product het zou kunnen zijn. Geen verpakking (fruit, groente, gerecht)? Gebruik <b>Voedsel herkennen</b>.':'Lees de gegevens van de verpakking of laat een foto van het voedsel herkennen.')+'</div>';
+  h+='<div class="row"><label class="btn'+(unknown?' primary':'')+'" style="cursor:pointer">'+ico('document_scanner','📦')+'Verpakking lezen<input type="file" accept="image/*" capture="environment" hidden data-change="cfOcr"></label><label class="btn" style="cursor:pointer">'+ico('nutrition','🍎')+'Voedsel herkennen<input type="file" accept="image/*" capture="environment" hidden data-change="cfFood"></label></div>';
+  h+='<div id="ocr-prog" style="display:'+(ai.busy?'block':'none')+';margin-top:10px"><div class="progress"><i style="width:'+(ai.busy?'8%':'0')+'"></i></div><div id="ocr-status" class="small muted" style="margin-top:4px">'+esc(ai.busy||'')+'</div></div>';
+  if(ai.msg)h+='<div class="note'+(ai.kind?' '+ai.kind:'')+'" style="margin-top:10px">'+esc(ai.msg)+'</div>';
+  const foods=ai.foods||p.aiFoods||[];
+  if(foods.length)h+='<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Wat zou het kunnen zijn?</div><div class="row">'+foods.map(f=>'<button type="button" class="chip" aria-pressed="'+(norm(p.name||'')===norm(f.name))+'" data-act="cfPickFood" data-name="'+esc(f.name)+'">'+esc(f.name)+' · '+Math.round(f.prob*100)+'%</button>').join('')+'</div></div>';
+  const cands=ai.cands||[];
+  if(cands.length)h+='<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Lijkt op deze producten in Open Food Facts — tik om over te nemen'+(p.barcode?' (je gescande barcode blijft behouden)':'')+':</div><div class="list">'+cands.map(c=>'<div class="li"><div class="thumb">'+(c.photo?'<img src="'+esc(c.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(c.name)+(c.brand?' <span class="muted" style="font-weight:400">· '+esc(c.brand)+'</span>':'')+'</div><div class="sub-t">'+(c.quantityLabel?esc(c.quantityLabel)+' ':'')+(c.nutri?nutriBadge(c.nutri):'')+'</div></div><div class="acts"><button type="button" class="btn sm" data-act="cfPickCand" data-code="'+esc(c.code)+'">Overnemen</button></div></div>').join('')+'</div></div>';
+  return h+'</div>'}
+function cfPaint(){cfSnapshot();paintModal()}
+A.cfOcr=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;cfSnapshot();CF.ai={busy:'Verpakking lezen…'};paintModal();
+  const {canvas}=await resizeImage(f,2000,0.85);const o=await ocrRead(canvas,false);const p=CF.pref;const fl=o.parsed.fields;const filled=[];
+  const put=(k,v,lbl)=>{if(v!=null&&v!==''&&!p[k]){p[k]=v;filled.push(lbl)}};
+  if(!o.err){put('name',fl.name,'naam');put('brand',fl.brand,'merk');if(fl.qty&&(!p.qty||p.qty===1)){p.qty=fl.qty;p.unit=fl.unit||p.unit;filled.push('inhoud')}
+    if(fl.category&&!p.category){p.category=fl.category;p.sub=fl.sub||''}else if(!p.category&&p.name){const c=classify(p.name);if(c){p.category=c.category;p.sub=c.sub}}
+    if(fl.expiryDate&&!p.expiryDate){p.expiryDate=fl.expiryDate;p.dateType=fl.dateType||'THT';filled.push('vervaldatum')}
+    if(!CF.photo&&o.thumb)CF.photo=o.thumb;p.ocrText=o.text;p.ocrConf=o.conf}
+  CF.ai={busy:'',msg:o.err?'Verpakking lezen lukte niet ('+o.err+'). De OCR-bibliotheek wordt de eerste keer van internet geladen.':filled.length?'Ingevuld van de verpakking: '+filled.join(', ')+'. Controleer de gegevens.':'Geen bruikbare tekst gevonden. Fotografeer de voorkant recht van voren, met veel licht.',kind:o.err||!filled.length?'warn':''};
+  paintModal();if(!o.err)await findCandidates();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg+(CF.ai.cands&&CF.ai.cands.length?' '+CF.ai.cands.length+' mogelijke producten gevonden.':''))};
+async function findCandidates(){const p=CF.pref;const q=[p.brand,p.name].filter(Boolean).join(' ').trim();if(q.length<3)return;
+  CF.ai.busy='Zoeken welk product het zou kunnen zijn…';paintModal();
+  try{let r=await offNameSearch(q,1,true);if(!r.products.length)r=await offNameSearch(q,1,false);
+    CF.ai.cands=r.products.map(srItem).filter(Boolean).slice(0,5)}
+  catch(e){CF.ai.cands=[];CF.ai.msg=(CF.ai.msg?CF.ai.msg+' ':'')+'Open Food Facts niet bereikbaar ('+e.message+').'}
+  CF.ai.busy='';if(Modals.length)cfPaint()}
+A.cfPickCand=d=>{cfSnapshot();const c=((CF.ai&&CF.ai.cands)||[]).find(x=>x.code===d.code);if(!c)return;const p=CF.pref;
+  Object.assign(p,{name:c.name,brand:c.brand||p.brand,qty:c.qty||p.qty,unit:c.unit||p.unit,category:c.category||p.category,sub:c.sub||p.sub,health:c.health||p.health});if(!p.barcode)p.barcode=c.code;if(c.photo)CF.photo=c.photo;
+  CF.ai.msg='Overgenomen: '+c.name+(c.brand?' · '+c.brand:'')+'. Controleer inhoud en datum.';CF.ai.kind='';paintModal();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg)};
+A.cfFood=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;cfSnapshot();CF.ai={busy:'Voedsel herkennen…'};paintModal();
+  const {canvas}=await resizeImage(f,1024,0.85);const r=await recogniseFood(canvas);const p=CF.pref;const best=r.foods[0];
+  if(!CF.photo)CF.photo=thumbOf(canvas);
+  if(best&&best.prob>=0.25&&!p.name){p.name=best.name;const c=classify(best.name);if(c&&!p.category){p.category=c.category;p.sub=c.sub}}
+  CF.ai={busy:'',foods:r.foods,msg:r.err?'Voedselherkenning niet beschikbaar ('+r.err+'). Het model wordt de eerste keer van internet geladen.':best?'Herkend: '+foodNames(r.foods)+'.':'Geen voedsel herkend. Probeer van dichterbij, met één product in beeld.',kind:r.err||!best?'warn':''};
+  paintModal();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg)};
+A.cfPickFood=d=>{cfSnapshot();const p=CF.pref;p.name=d.name;const c=classify(d.name);if(c){p.category=c.category;p.sub=c.sub}const ex=M.findProductByName(d.name,'');if(ex&&!p.barcode){Object.assign(p,prefFromProduct(ex));}paintModal()};
 
 /* ===================== RECEPTEN & WEEKPLANNER ===================== */
 const MEAL_LABEL={ontbijt:'Ontbijt',lunch:'Lunch',avond:'Avondmaal'};
@@ -1812,7 +1923,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='2.2 · 21-11-2026';
+const APP_VERSION='2.3 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -1923,7 +2034,7 @@ const SET_TABS=[['algemeen','Huishouden'],['houdbaarheid','Houdbaarheid'],['meld
 VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.settingsTab=tab;const st=M.settings();
   let h='<div class="tabs" role="tablist">'+SET_TABS.map(t=>'<button type="button" class="tab" role="tab" id="stab-'+t[0]+'" aria-controls="spanel-'+t[0]+'" aria-selected="'+(tab===t[0])+'" data-act="setTab" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div role="tabpanel" id="spanel-'+tab+'" aria-labelledby="stab-'+tab+'" data-glean-id="set-'+tab+'" style="max-width:860px">';
   const num=(path,v,min,max)=>'<input class="inp" type="number" min="'+min+'" max="'+max+'" value="'+esc(v)+'" data-change="setNum" data-path="'+path+'" style="max-width:120px">';
-  if(tab==='algemeen'){h+=themeSection()+installSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
+  if(tab==='algemeen'){h+=themeSection()+a11ySection()+installSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div><div class="field"><label>Standaard aantal personen (recepten)</label>'+num('servings',st.servings,1,12)+'</div></div></div>';
     h+='<div class="section"><h3>Gebruikers</h3><p class="muted small" style="margin-top:0">Iedere handeling in de geschiedenis wordt bewaard met de naam van de gebruiker. '+(Store.mode==='yjs'?'Je gebruikt de gedeelde Glean-opslag: iedereen met wie je deze app deelt, ziet en bewerkt dezelfde voorraad in realtime.':'De gegevens staan op dit toestel. Wil je met meerdere toestellen tegelijk werken, open de app dan via Glean (gedeeld) of zet een back-up over.')+'</p><div class="row">'+st.users.map(u=>'<span class="chip" aria-pressed="'+(u===M.getUser())+'">'+esc(u)+(st.users.length>1?' <a href="#" data-act="delUser" data-u="'+esc(u)+'" aria-label="Verwijder '+esc(u)+'">✕</a>':'')+'</span>').join('')+'</div><div class="row" style="margin-top:10px"><input id="new-user" class="inp" style="max-width:220px" placeholder="Naam gezinslid" data-enter="addUser"><button type="button" class="btn" data-act="addUser">Toevoegen</button></div></div>'}
   if(tab==='gezondheid')h+=healthSettings(st);
   if(tab==='houdbaarheid'){const t=st.thresholds;h+='<div class="section"><h3>Waarschuwingstermijnen</h3><div class="stack"><div class="row"><span class="tag lv-expired" style="width:140px">Vervallen</span><span class="muted small">datum voorbij</span></div><div class="row"><span class="tag lv-red" style="width:140px">Rood/oranje</span>0 tot '+num('thresholds.red',t.red,0,30)+' dagen</div><div class="row"><span class="tag lv-orange" style="width:140px">Oranje</span>tot '+num('thresholds.orange',t.orange,1,60)+' dagen</div><div class="row"><span class="tag lv-yellow" style="width:140px">Geel</span>tot '+num('thresholds.yellow',t.yellow,1,120)+' dagen</div><div class="row"><span class="tag lv-ok" style="width:140px">Normaal</span><span class="muted small">daarna</span></div></div></div>';
@@ -2043,8 +2154,8 @@ function buildNav(){$('#nav-side').innerHTML=VIEWS.filter(v=>v[0]!=='scanner').m
 A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">'+VIEWS.map(v=>'<button type="button" class="nav-btn" data-act="navFromMenu" data-view="'+v[0]+'">'+ico(v[3],v[2])+esc(v[1])+'</button>').join('')+'</div>'});
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
-const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner();if(!M.products().length)h+='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
-function start(){try{Theme.apply();Theme.watch()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
+const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner()+a11yBar();if(!M.products().length)h+='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
+function start(){try{Theme.apply();Theme.watch()}catch(e){}try{A11y.apply();ToTop.init()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
 async function boot(){const collab=window.GleanBridge&&window.GleanBridge.collaboration;
@@ -2124,6 +2235,61 @@ function installBanner(){if(!Install.evt||Install.standalone()||LS.get('installD
   return '<div class="card install-card" style="margin-bottom:16px" data-glean-id="install-banner"><div class="row nowrap" style="align-items:flex-start;gap:16px"><img src="icons/icon-192.png" alt="" width="48" height="48" style="border-radius:12px;flex:0 0 48px" onerror="this.remove()"><div class="grow"><div style="font-size:16px;line-height:24px;font-weight:500">Installeer Provisio als app</div><div class="muted">Eigen icoon op je startscherm, opent zonder adresbalk en werkt ook offline.</div><div class="row" style="margin-top:12px"><button type="button" class="btn primary" data-act="installApp">Installeren</button><button type="button" class="btn ghost" data-act="installLater">Niet nu</button></div></div></div></div>'}
 A.installApp=async()=>{const e=Install.evt;if(!e){go('instellingen',{tab:'algemeen'});return}try{await e.prompt();const c=await e.userChoice;Install.evt=null;if(c&&c.outcome==='dismissed')toast('Installatie geannuleerd. Je kunt Provisio later installeren via Instellingen › Algemeen.')}catch(err){toast('Installeren lukte niet: '+(err&&err.message||err),'error')}render()};
 A.installLater=()=>{LS.set('installDismissed',true);toast('Je kunt Provisio later installeren via Instellingen › Algemeen.');render()};
+
+/* ---------- Toegankelijkheid (slechtzienden) ---------- */
+const A11y={def:{size:'m',contrast:false,big:false,motion:false,speak:false,speakToasts:false,rate:1},
+  SIZES:[['m','Normaal','100%'],['l','Groot','115%'],['xl','Extra groot','130%'],['xxl','Maximaal','150%']],
+  RATES:[[0.8,'Traag'],[1,'Normaal'],[1.25,'Snel']],
+  get(){const o=LS.get('a11y',{});return Object.assign({},A11y.def,o&&typeof o==='object'?o:{})},
+  set(k,v){const o=A11y.get();o[k]=v;LS.set('a11y',o);A11y.apply()},
+  apply(){const o=A11y.get();const r=document.documentElement;if(!r)return;r.setAttribute('data-size',o.size);const cl=r.classList;if(cl){cl.toggle('hc',!!o.contrast);cl.toggle('big',!!o.big);cl.toggle('rm',!!o.motion)}},
+  canSpeak(){return typeof window.speechSynthesis!=='undefined'&&typeof window.SpeechSynthesisUtterance!=='undefined'},
+  voice(){try{const vs=speechSynthesis.getVoices()||[];return vs.find(v=>/^nl[-_]BE/i.test(v.lang))||vs.find(v=>/^nl[-_]NL/i.test(v.lang))||vs.find(v=>/^nl/i.test(v.lang))||null}catch(e){return null}},
+  speak(text,force){const o=A11y.get();if((!force&&!o.speak)||!text||!A11y.canSpeak())return false;
+    try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(String(text).replace(/[·•]/g,',').replace(/\s+/g,' ').trim());u.lang='nl-BE';const v=A11y.voice();if(v){u.voice=v;u.lang=v.lang}u.rate=Number(o.rate)||1;speechSynthesis.speak(u);A11y.last=u.text;return true}catch(e){return false}},
+  say(text){return A11y.speak(text,false)},
+  stop(){try{speechSynthesis.cancel()}catch(e){}},
+  confirmOpened(){if(A11y.get().speak)setTimeout(()=>A11y.say(confirmSpeech()),250)}};
+function unitWord(u){return ({g:'gram',kg:'kilo',ml:'milliliter',cl:'centiliter',l:'liter',stuks:'stuks',verpakkingen:'verpakkingen'})[u]||u||''}
+function dayPhrase(days){if(days==null)return '';if(days<-1)return 'is '+(-days)+' dagen over datum';if(days===-1)return 'is gisteren vervallen';if(days===0)return 'vervalt vandaag';if(days===1)return 'vervalt morgen';return 'vervalt over '+days+' dagen'}
+function confirmSpeech(){if(typeof CF==='undefined'||!CF||!CF.pref)return '';const p=CF.pref;const ex=p.existingProductId&&M.S.products[p.existingProductId];const parts=[];
+  if(p.unknownBarcode)parts.push('Onbekend product. Barcode staat niet in de databank. Je kunt de verpakking laten lezen of de gegevens zelf invullen.');
+  else if(p.name)parts.push((ex?'Gekend product: ':'Gevonden: ')+p.name+(p.brand?', merk '+p.brand:'')+(p.qty?', '+p.qty+' '+unitWord(p.unit):'')+'.');
+  else parts.push('Nieuw product. Vul de productnaam in.');
+  if(p.locationId&&M.S.locations[p.locationId])parts.push('Opslagplaats: '+M.locName(p.locationId)+'.');else parts.push('Kies nog een opslagplaats.');
+  if(p.expiryDate)parts.push((p.dateType==='TGT'?'Te gebruiken tot ':'Ten minste houdbaar tot ')+fmtDate(p.expiryDate)+'.');else parts.push('Nog geen vervaldatum.');
+  return parts.join(' ')}
+A.cfSpeak=()=>{cfSnapshot();A11y.speak(confirmSpeech(),true)};
+function expirySpeech(){const rows=M.lots().map(l=>({l,p:M.S.products[l.productId],e:M.lotExpiry(l)})).filter(x=>x.p&&x.e&&x.e.days!=null&&x.e.days<=7).sort((a,b)=>a.e.days-b.e.days);
+  if(!rows.length)return 'Goed nieuws: deze week vervalt er niets.';
+  const list=rows.slice(0,8).map(x=>x.p.name+', in '+M.locName(x.l.locationId)+', '+dayPhrase(x.e.days)).join('. ');
+  return (rows.length===1?'Eén product':rows.length+' producten')+' vervallen binnen een week. '+list+'.'+(rows.length>8?' En nog '+(rows.length-8)+' andere.':'')}
+A.speakExpiry=()=>{if(!A11y.speak(expirySpeech(),true))toast('Voorlezen wordt niet ondersteund in deze browser.','error')};
+A.speakStop=()=>A11y.stop();
+function a11yBar(){const o=A11y.get();if(!o.speak)return '';return '<div class="row" style="margin-bottom:16px" data-glean-id="a11y-bar"><button type="button" class="btn" data-act="speakExpiry">'+ico('record_voice_over','🔊')+'Vervaldatums voorlezen</button><button type="button" class="btn ghost" data-act="speakStop">Stop voorlezen</button></div>'}
+function a11ySection(){const o=A11y.get();const can=A11y.canSpeak();const v=can?A11y.voice():null;
+  const tg=(k,lbl,hint)=>'<label class="check a11y-opt"><input type="checkbox" data-change="a11ySet" data-k="'+k+'" '+(o[k]?'checked':'')+'><span><b>'+lbl+'</b><br><span class="small muted">'+hint+'</span></span></label>';
+  return '<div class="section" data-glean-id="settings-a11y"><h3>Toegankelijkheid</h3>'+
+  '<div class="lbl" style="margin-bottom:6px">Tekstgrootte</div><div class="seg" role="group" aria-label="Tekstgrootte">'+A11y.SIZES.map(s=>'<button type="button" data-act="a11ySize" data-s="'+s[0]+'" aria-pressed="'+(o.size===s[0])+'">'+s[1]+' <span class="small">'+s[2]+'</span></button>').join('')+'</div>'+
+  '<div class="stack" style="margin-top:12px;gap:10px">'+tg('contrast','Hoog contrast','Donkerdere tekst, duidelijke randen rond knoppen en velden.')+tg('big','Grote knoppen','Knoppen en invoervelden worden groter en makkelijker aan te tikken.')+tg('motion','Minder beweging','Geen animaties of overgangen.')+
+  (can?tg('speak','Voorlezen','Leest scanresultaten voor (product, opslagplaats, vervaldatum) en toont een knop om je vervaldatums te laten voorlezen.')+tg('speakToasts','Meldingen voorlezen','Leest ook korte meldingen onderaan het scherm voor.'):'<div class="note warn">Voorlezen wordt niet ondersteund in deze browser.</div>')+'</div>'+
+  (can?'<div class="lbl" style="margin:12px 0 6px">Spreeksnelheid</div><div class="row"><div class="seg" role="group" aria-label="Spreeksnelheid">'+A11y.RATES.map(r=>'<button type="button" data-act="a11yRate" data-r="'+r[0]+'" aria-pressed="'+(Number(o.rate)===r[0])+'">'+r[1]+'</button>').join('')+'</div><button type="button" class="btn" data-act="a11yTest">'+ico('record_voice_over','🔊')+'Test</button></div><div class="hint" style="margin-top:6px">'+(v?'Stem: '+esc(v.name)+' ('+esc(v.lang)+').':'Geen Nederlandse stem gevonden op dit toestel — de standaardstem wordt gebruikt. Je kunt een Nederlandse stem toevoegen in de instellingen van je toestel (Spraak / Tekst-naar-spraak).')+'</div>':'')+
+  '<div class="hint" style="margin-top:10px">Werkt ook samen met de schermlezer van je toestel (VoiceOver of TalkBack). De keuzes gelden per toestel.</div></div>'}
+A.a11ySize=d=>{A11y.set('size',d.s);render();toast('Tekstgrootte: '+(A11y.SIZES.find(s=>s[0]===d.s)||[,''])[1].toLowerCase()+'.')};
+A.a11ySet=(d,el)=>{A11y.set(d.k,!!el.checked);render();if(d.k==='speak'&&el.checked)A11y.speak('Voorlezen staat aan.',true)};
+A.a11yRate=d=>{A11y.set('rate',Number(d.r));render();A11y.speak('Zo klinkt deze snelheid.',true)};
+A.a11yTest=()=>{if(!A11y.speak('Hallo, dit is Provisio. Zo klinkt het voorlezen.',true))toast('Voorlezen lukte niet in deze browser.','error')};
+/* meldingen voorlezen */
+const _toastBase=toast;toast=function(m,k,a){_toastBase(m,k,a);try{if(A11y.get().speakToasts)A11y.speak(m,true)}catch(e){}};
+/* naar-boven-knop */
+const ToTop={el:null,
+  target(){const ov=document.querySelector&&document.querySelector('#modal-root .overlay');return ov||null},
+  offset(){const ov=ToTop.target();return ov?ov.scrollTop:(window.scrollY||window.pageYOffset||(document.documentElement&&document.documentElement.scrollTop)||0)},
+  update(){if(!ToTop.el)return;const show=ToTop.offset()>400;if(ToTop.el.classList)ToTop.el.classList.toggle('show',show)},
+  go(){const ov=ToTop.target();const beh=A11y.get().motion?'auto':'smooth';if(ov){try{ov.scrollTo({top:0,behavior:beh})}catch(e){ov.scrollTop=0}}else{try{window.scrollTo({top:0,behavior:beh})}catch(e){window.scrollTo(0,0)}}
+    setTimeout(()=>{const f=ov?ov.querySelector('.modal [name],.modal button'):document.querySelector('#view h1,#view h2,#view button');if(f&&f.focus)try{f.focus({preventScroll:true})}catch(e){}ToTop.update()},350)},
+  init(){try{if(ToTop.el||!document.body||!document.body.appendChild)return;const b=document.createElement('button');b.type='button';b.className='to-top';b.setAttribute('aria-label','Naar boven');b.innerHTML=ico('arrow_upward','⬆')+'<span>Naar boven</span>';b.onclick=()=>ToTop.go();document.body.appendChild(b);ToTop.el=b;
+    document.addEventListener('scroll',()=>ToTop.update(),true);window.addEventListener('resize',()=>ToTop.update())}catch(e){}}};
 
 
 boot().catch(function(e){console.error(e);document.getElementById('view').innerHTML='<div class="loading"><b>De app kon niet starten.</b><div class="small">'+String(e&&e.message||e)+'</div></div>'});
