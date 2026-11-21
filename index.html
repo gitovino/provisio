@@ -620,6 +620,14 @@ const KNOWN_BRANDS=['Boni','Everyday','Barilla','Panzani','Lutosa','Iglo','Knorr
 function ocrNormalize(t){return String(t||'').replace(/(?<=\d)[oO]|[oO](?=\d)/g,'0').replace(/(?<=\d)[lI|](?=\d)/g,'1').replace(/(?<=\d) ?([\/\.\-]) ?(?=\d)/g,'$1')}
 function inferYear(d,m){const t=new Date();let y=t.getFullYear();const cand=Date.UTC(y,m-1,d);if(cand<Date.UTC(t.getFullYear(),t.getMonth(),t.getDate())-60*DAY)y++;return y}
 function mkDate(y,m,d){if(y<100)y+=2000;if(m<1||m>12||d<1||d>31||y<2000||y>2100)return null;const dt=new Date(Date.UTC(y,m-1,d));if(dt.getUTCMonth()!==m-1)return null;return isoUTC(dt)}
+/* "Houdbaar na opening" uit etikettekst: "na opening binnen 3 dagen", "binnen 2 weken na openen", "après ouverture … 5 jours" */
+const OPEN_KW='(?:^|[^a-z])(?:na (?:het )?(?:openen|opening)|eenmaal geopend|geopend|apres ouverture|une fois ouvert|after opening|once opened|nach (?:dem )?(?:offnen|anbruch))';
+const OPEN_UNIT='(dagen|dag|d|weken|week|wk|maanden|maand|mnd|uren|uur|u|h|jours?|j|semaines?|mois|heures?|days?|weeks?|months?|hours?|tagen?|wochen?|monaten?|monat|stunden?)';
+function openDaysFromText(text){const t=norm(String(text||'').replace(/\s+/g,' '));if(!t)return null;
+  const conv=(n,u)=>{n=Number(n);if(!(n>0))return null;u=u||'';let d=/^(we|wk|sem|wo)/.test(u)?n*7:/^(maand|mnd|mois|month|monat)/.test(u)?n*30:/^(u|uur|uren|h|heure|hour|stund)/.test(u)?Math.ceil(n/24):n;d=Math.round(d);return d>=1&&d<=730?d:null};
+  let m=t.match(new RegExp(OPEN_KW+'[^;]{0,60}?(\\d{1,3})\\s*'+OPEN_UNIT+'\\b'));if(m){const d=conv(m[1],m[2]);if(d)return d}
+  m=t.match(new RegExp('(\\d{1,3})\\s*'+OPEN_UNIT+'\\b[^;]{0,25}?'+OPEN_KW));if(m){const d=conv(m[1],m[2]);if(d)return d}
+  return null}
 function findDates(text){const out=[];const t=ocrNormalize(text);let m;
   const reNum=/(?<![\d\/\.\-])(\d{1,2})[\/\.\-](\d{1,2})(?:[\/\.\-](\d{2,4}))?(?![\d\/\.\-]?\d)/g;
   while((m=reNum.exec(t))){const d=+m[1],mo=+m[2];const y=m[3]?+m[3]:inferYear(d,mo);const iso=mkDate(y,mo,d);if(iso)out.push({iso,idx:m.index,raw:m[0],precise:!!m[3]})}
@@ -645,6 +653,7 @@ function parseLabel(text,opts){opts=opts||{};const today=opts.today||todayStr();
   if(!res.fields.expiryDate&&free.length){const fut=free.filter(d=>d.iso>today).sort((a,b)=>a.iso<b.iso?1:-1);
     if(fut.length){res.fields.expiryDate=fut[0].iso;res.fields.dateType=opts.handwritten?'EIGEN':'THT';res.notes.push(opts.handwritten?'Datum op etiket herkend als zelf gekozen gebruiksdatum — controleer.':'Vervaldatum zonder duidelijk trefwoord (THT/TGT) herkend — controleer het datumtype.')}}
   const q=parseQuantityString(raw);if(q){res.fields.qty=q.qty;res.fields.unit=q.unit}
+  const od=openDaysFromText(raw);if(od)res.fields.openDays=od;
   const b=raw.match(/(?:\blot(?:nr|nummer)?\b|\bbatch\b|\bcharge\b|\bL)\s*[:.#]?\s*([A-Z0-9][A-Z0-9\-\/]{3,})/i);if(b&&/\d/.test(b[1]))res.fields.batch=b[1];
   const brandList=(opts.brands||[]).concat(KNOWN_BRANDS);
   for(const br of brandList){if(!br||br.length<2)continue;const re=new RegExp('(^|[^a-z])'+reEsc(norm(br))+'([^a-z]|$)');if(re.test(low)){res.fields.brand=br;break}}
@@ -771,6 +780,17 @@ function createModel(adapter,hooks){hooks=hooks||{};
     return {members:ms,lead,total:rnd(total),min:Number(lead.minStock)||0,unit:lead.unit,other,reorder:ms.some(m=>m.reorderWhenEmpty!==false),multi:true}}
   function kindSuggest(name){const n=norm(name);if(!n)return '';const words=n.split(/[^a-z0-9]+/).filter(Boolean);let best='';
     new Set(products().map(kindOf)).forEach(c=>{const k=norm(c);if(!k||k===n||k.length<3)return;const hit=k.includes(' ')?n.includes(k):words.some(w=>w===k||(k.length>=4&&w.endsWith(k)));if(hit&&k.length>norm(best).length)best=c});return best}
+  /* ---------- Houdbaar na opening: bron 'etiket' | 'geschat' (Gemini) | 'zelf' | 'nvt' (niet van toepassing). Leeg = nog onbekend. ---------- */
+  function openShelfSrc(p){if(!p)return '';if(p.openShelfSrc)return p.openShelfSrc;return Number(p.openShelfDays)>0?'zelf':''}
+  function openShelfTodo(){return products().filter(p=>!Number(p.openShelfDays)&&!openShelfSrc(p))}
+  function openShelfStats(){const o={etiket:0,geschat:0,zelf:0,nvt:0,todo:0};products().forEach(p=>{const s=openShelfSrc(p);if(s)o[s]=(o[s]||0)+1;else o.todo++});return o}
+  /* items: [{id, days, nvt, src:'geschat'|'etiket', store, conf, note}]. Overschrijft nooit een eigen waarde; een etiketwaarde gaat voor op een schatting. */
+  function applyOpenShelf(items){let n=0;tx(()=>{(items||[]).forEach(x=>{const p=x&&S.products[x.id];if(!p)return;const cur=openShelfSrc(p);const src=x.src==='etiket'?'etiket':'geschat';
+      if(cur==='zelf'||cur==='nvt'&&src!=='etiket')return;if(src==='geschat'&&cur==='etiket')return;
+      const days=x.nvt?0:Math.round(Number(x.days)||0);if(!x.nvt&&!(days>=1&&days<=730))return;
+      const patch={openShelfDays:days,openShelfSrc:x.nvt?'nvt':src,openShelfStore:String(x.store||'').slice(0,20),openShelfConf:src==='geschat'?String(x.conf||''):'',openShelfNote:String(x.note||'').slice(0,200),openShelfAt:todayStr()};
+      if(Object.keys(patch).every(k=>k==='openShelfAt'||p[k]===patch[k]))return;
+      put('products',Object.assign({},p,patch,{updatedAt:nowISO()}));n++})});return n}
   function productLevel(pid){const p=S.products[pid];if(!p)return null;const k=kindState(pid);if(k.other)return null;if(k.total<=0)return 'op';if(k.min>0&&k.total<k.min)return 'laag';return null}
   function shopProduct(s){return s&&s.productId?S.products[s.productId]||null:null}
   function shopBrand(s){if(!s||s.anyBrand)return '';const p=shopProduct(s);if(p&&!p.brandRequired)return '';return s.brand||(p&&p.brand)||''}
@@ -961,7 +981,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
     return {products:pids.size,lots:ls.length,totalLabel:parts.join(' · ')||'leeg',low,soon,expired:exp,nodate,warnings:soon+exp+low}}
   function report(days){days=days||30;const from=addDays(todayStr(),-days);const hs=Object.values(S.history).filter(h=>h.date>=from);const c={};hs.forEach(h=>{c[h.action]=(c[h.action]||0)+1});return {counts:c,waste:hs.filter(h=>h.action==='weggegooid'),total:hs.length}}
   function inventoryRows(){return lots().map(l=>{const p=S.products[l.productId]||{};const e=lotExpiry(l);return {'Product':p.name||'','Merk':p.brand||'','Categorie':p.category||'','Subcategorie':p.sub||'','Opslaglocatie':locName(l.locationId),'Hoeveelheid':l.qty,'Eenheid':l.unit,'Aankoopdatum':l.purchaseDate||'onbekend','Datumtype':l.dateType||'','Vervaldatum':l.expiryDate||'','Effectieve datum':e.date||'','Dagen resterend':e.days==null?'':e.days,'Invriesdatum':l.freezeDate||'','Geopend':l.opened?'ja':'nee','Geopend op':l.openedDate||'','Minimumvoorraad':p.minStock||0,'Barcode':p.barcode||'','Batch':l.batch||'','Opmerkingen':[p.notes,l.notes].filter(Boolean).join(' / ')}})}
-  function productRows(){return products().map(p=>({'Product':p.name,'Merk':p.brand||'','Soort':kindOf(p),'Alleen dit merk':p.brandRequired?'ja':'nee','Categorie':p.category||'','Subcategorie':p.sub||'','Totaal in huis':productTotal(p.id),'Eenheid':p.unit,'Minimumvoorraad':p.minStock||0,'Status':productLevel(p.id)||'ok','Partijen':lotsOf(p.id).length,'Barcode':p.barcode||''}))}
+  function productRows(){return products().map(p=>({'Product':p.name,'Merk':p.brand||'','Soort':kindOf(p),'Alleen dit merk':p.brandRequired?'ja':'nee','Categorie':p.category||'','Subcategorie':p.sub||'','Totaal in huis':productTotal(p.id),'Eenheid':p.unit,'Minimumvoorraad':p.minStock||0,'Status':productLevel(p.id)||'ok','Partijen':lotsOf(p.id).length,'Houdbaar na opening (dagen)':Number(p.openShelfDays)||'','Bron na opening':{etiket:'etiket',geschat:'geschat',zelf:'zelf',nvt:'n.v.t.'}[openShelfSrc(p)]||'','Barcode':p.barcode||''}))}
   function shoppingRows(){return shopSorted().map(s=>({'Product':s.name,'Merk':shopBrand(s),'Hoeveelheid':s.qty,'Eenheid':s.unit,'Verpakking':s.pack||'','Categorie':s.category||'','Gang':shopAisle(s),'Gekocht':s.checked?'ja':'nee','Reden':s.auto||'manueel','Notitie':s.note||''}))}
   function historyRows(){return Object.values(S.history).sort((a,b)=>a.ts<b.ts?1:-1).map(h=>({'Datum':h.ts.slice(0,16).replace('T',' '),'Handeling':h.action,'Product':h.name,'Hoeveelheid':h.qty,'Eenheid':h.unit,'Van':h.from?locName(h.from):'','Naar/locatie':h.to?locName(h.to):'','Gebruiker':h.user||'','Notitie':h.note||''}))}
   const backup=()=>({app:'slim-voorraadbeheer',version:1,exportedAt:nowISO(),data:clone(S)});
@@ -971,7 +991,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
   return {S,listeners,tx,load,applyRemote,settings,saveSettings,household,effServings,categories,saveCategories,state,saveState,isInitialized,initDefaults,setUser,getUser,
     locations,products,lots,lotsOf,lotsIn,locName,isFreezer,catAisle,shopAisle,shopAisleInfo,shopGroups,shopSorted,levelFor,lotExpiry,suitable,fifoCmp,fifoLots,productTotal,productLevel,expiryWarning,hist,
     findProductByBarcode,findProductByName,saveProduct,deleteProduct,addLot,updateLot,consume,useUp,discard,topUpLot,moveLot,openLot,deleteLot,openPackAsPieces,piecesPerPack,countLot,correctUse,canCorrect,markChecked,allocateFIFO,consumeFIFO,
-    checkMinStock,openShoppingFor,addShopping,kindOf,kindLabel,kindKey,kindProducts,kindMembers,kindState,kindSuggest,shopBrand,shopProduct,shopItemFor,updateShopping,removeShopping,transferPurchased,saveLocation,deleteLocation,allRecipes,recipeById,saveRecipe,deleteRecipe,ingMatches,evalRecipe,passesFilter,suggestRecipes,cookRecipe,
+    checkMinStock,openShoppingFor,addShopping,kindOf,kindLabel,kindKey,kindProducts,kindMembers,kindState,kindSuggest,openShelfSrc,openShelfTodo,openShelfStats,applyOpenShelf,shopBrand,shopProduct,shopItemFor,updateShopping,removeShopping,transferPurchased,saveLocation,deleteLocation,allRecipes,recipeById,saveRecipe,deleteRecipe,ingMatches,evalRecipe,passesFilter,suggestRecipes,cookRecipe,
     MEALS,planKey,weekDates,setPlan,clearPlan,movePlan,evalWeek,weekMissing,addWeekMissing,generateWeek,buildNotifications,useFirst,lowStock,locStats,report,inventoryRows,productRows,shoppingRows,historyRows,backup,restore,wipe,put,del}}
 
 /* ---------- CSV / XLSX ---------- */
@@ -1326,7 +1346,7 @@ A.product=d=>openProduct(d.id);
 function openProduct(pid){openModal({title:'Product',gid:'dialog-product',wide:true,live:true,body:()=>productDetail(pid),foot:()=>M.S.products[pid]?'<button type="button" class="btn danger" data-act="deleteProduct" data-id="'+esc(pid)+'">Product verwijderen</button><span class="grow"></span><button type="button" class="btn" data-act="toShop" data-id="'+esc(pid)+'">🛒 Op lijst</button><button type="button" class="btn" data-act="editProduct" data-id="'+esc(pid)+'">✎ Bewerken</button><button type="button" class="btn primary" data-act="addLotFor" data-id="'+esc(pid)+'">+ Nieuwe partij</button>':''})}
 function productDetail(pid){const p=M.S.products[pid];if(!p)return '<div class="empty">Dit product bestaat niet meer.</div>';const ls=M.fifoLots(pid);const tot=M.productTotal(pid);
   let h='<div class="row nowrap" style="align-items:flex-start">'+thumb(p).replace('class="thumb"','class="thumb" style="width:72px;height:72px;flex-basis:72px;font-size:34px"')+'<div class="grow"><div style="font-size:20px;font-weight:600;line-height:1.25">'+esc(p.name)+'</div><div class="muted">'+esc([p.brand,p.category,p.sub].filter(Boolean).join(' · '))+'</div>'+
-   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag">'+p.openShelfDays+' d houdbaar na opening</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'</div></div>';h+=healthSection(p);
+   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag"'+(M.openShelfSrc(p)==='geschat'?' title="Geschat door Gemini. Pas aan via Bewerken als het etiket iets anders zegt."':p.openShelfNote?' title="'+esc(p.openShelfNote)+'"':'')+'>'+p.openShelfDays+' d houdbaar na opening'+({etiket:' · etiket',geschat:' · geschat'}[M.openShelfSrc(p)]||'')+'</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'</div></div>';h+=healthSection(p);
   h+='<div><div class="row between"><div class="eyebrow">Voorraadpartijen · FIFO-volgorde</div>'+(ls.length?'<button type="button" class="btn sm" data-act="useProduct" data-id="'+esc(pid)+'">− Gebruiken (FIFO)</button>':'')+'</div>';
   if(!ls.length)h+='<div class="empty">Geen voorraad meer. '+(M.openShoppingFor(pid)?'Staat op je boodschappenlijst.':'')+'</div>';
   else{h+='<div class="list" style="margin-top:6px">';ls.forEach((l,i)=>{const e=M.lotExpiry(l);const w=M.expiryWarning(e,M.isFreezer(l.locationId));const ok=M.suitable(l);
@@ -1639,7 +1659,7 @@ function confirmBody(){const p=CF.pref;const ex=p.existingProductId&&M.S.product
   h+='<div class="row"><label class="check"><input type="checkbox" name="opened" '+(p.opened?'checked':'')+'> Geopend</label><label class="check"><input type="checkbox" name="needsCheck" '+(p.needsCheck?'checked':'')+'> Later nog controleren</label></div>';
   h+=nutConfirmSection(p);
   h+=kindFields(p.kind!=null?p.kind:(ex?ex.kind||'':M.kindSuggest(p.name)),p.brandRequired!=null?!!p.brandRequired:!!(ex&&ex.brandRequired),p.name);
-  h+='<details'+(p.existingProductId?'':' open')+'><summary>Productinstellingen (minimumvoorraad, verpakking, houdbaarheid na opening)</summary><div class="grid4" style="margin-top:10px"><div class="field"><label>Minimumvoorraad</label><input name="minStock" class="inp" type="number" step="any" min="0" value="'+esc(p.minStock||'')+'" placeholder="0 = geen"></div><div class="field"><label>Eenheid voorraad</label><select name="punit" class="inp">'+sel(p.punit||(ex&&ex.unit)||p.unit||'stuks',UNITS.map(u=>[u.id,u.label]))+'</select></div><div class="field"><label>Inhoud per verpakking</label><input name="packSize" class="inp" type="number" step="any" min="0" value="'+esc(p.packSize||'')+'"></div><div class="field"><label>Eenheid inhoud</label><select name="packUnit" class="inp">'+sel(p.packUnit||'g',[['g','gram'],['ml','milliliter'],['kg','kilogram'],['l','liter'],['stuks','stuks']])+'</select></div><div class="field"><label>Houdbaar na opening (dagen)</label><input name="openShelfDays" class="inp" type="number" min="0" value="'+esc(p.openShelfDays||'')+'"></div><div class="field span2" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="reorderWhenEmpty" '+(p.reorderWhenEmpty===false?'':'checked')+'> Op boodschappenlijst zetten als het op is</label></div></div><div class="field" style="margin-top:10px"><label>Opmerkingen bij product</label><input name="pnotes" class="inp" value="'+esc(p.pnotes||'')+'"></div><div class="field" style="margin-top:10px"><label>Opmerking bij deze partij</label><input name="notes" class="inp" value="'+esc(p.notes||'')+'"></div></details>';
+  h+='<details'+(p.existingProductId?'':' open')+'><summary>Productinstellingen (minimumvoorraad, verpakking, houdbaarheid na opening)</summary><div class="grid4" style="margin-top:10px"><div class="field"><label>Minimumvoorraad</label><input name="minStock" class="inp" type="number" step="any" min="0" value="'+esc(p.minStock||'')+'" placeholder="0 = geen"></div><div class="field"><label>Eenheid voorraad</label><select name="punit" class="inp">'+sel(p.punit||(ex&&ex.unit)||p.unit||'stuks',UNITS.map(u=>[u.id,u.label]))+'</select></div><div class="field"><label>Inhoud per verpakking</label><input name="packSize" class="inp" type="number" step="any" min="0" value="'+esc(p.packSize||'')+'"></div><div class="field"><label>Eenheid inhoud</label><select name="packUnit" class="inp">'+sel(p.packUnit||'g',[['g','gram'],['ml','milliliter'],['kg','kilogram'],['l','liter'],['stuks','stuks']])+'</select></div><div class="field"><label>Houdbaar na opening (dagen)</label><input name="openShelfDays" class="inp" type="number" min="0" value="'+esc(p.openShelfDays||'')+'">'+osHint(cfOpenInfo(p),true)+'</div><div class="field span2" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="reorderWhenEmpty" '+(p.reorderWhenEmpty===false?'':'checked')+'> Op boodschappenlijst zetten als het op is</label></div></div><div class="field" style="margin-top:10px"><label>Opmerkingen bij product</label><input name="pnotes" class="inp" value="'+esc(p.pnotes||'')+'"></div><div class="field" style="margin-top:10px"><label>Opmerking bij deze partij</label><input name="notes" class="inp" value="'+esc(p.notes||'')+'"></div></details>';
   if(p.ocrText!=null)h+='<details><summary>Herkende tekst (OCR'+(p.ocrConf!=null?' · betrouwbaarheid '+Math.round(p.ocrConf)+'%':'')+')</summary><pre class="ocr">'+esc(p.ocrText||'(geen tekst)')+'</pre>'+(p.photoCandidate&&!CF.photo?'<button type="button" class="btn sm" data-act="cfUseOcrPhoto" style="margin-top:6px">Gebruik deze foto als productfoto</button>':'')+'</details>';
   return h}
 function cfSnapshot(){const root=$('.modal');if(!root)return;const f=formData(root);Object.assign(CF.pref,f)}
@@ -1653,24 +1673,27 @@ A.cfSave=d=>{cfSnapshot();const f=CF.pref;nutToPref(f);const next=d.next==='1';i
   if(f.dateType==='GEEN')f.expiryDate='';if(f.expiryDate&&f.dateType==='GEEN')f.dateType='EIGEN';if(f.expiryDate&&f.expiryDate<todayStr()&&f.dateType==='TGT'&&!confirm('Deze TGT-datum ligt in het verleden. Toch opslaan?'))return;
   const pdate=purchaseOf(f);const count=Math.min(50,Math.max(1,parseInt(f.count||1,10)));let pid=f.existingProductId;
   const pdata={name:f.name,brand:f.brand,category:f.category,sub:f.sub,barcode:f.barcode,photo:CF.photo||'',minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,packUnit:f.packUnit,openShelfDays:Number(f.openShelfDays)||0,reorderWhenEmpty:!!f.reorderWhenEmpty,notes:f.pnotes,unit:f.punit||f.unit,kind:f.kind||'',brandRequired:!!f.brandRequired};if(f.health)pdata.health=f.health;
+  {const ex0=f.existingProductId&&M.S.products[f.existingProductId];const days=pdata.openShelfDays;
+    if(f.osAuto&&days===f.osAuto.days&&!f.osOk)Object.assign(pdata,{openShelfSrc:f.osAuto.src,openShelfNote:f.osAuto.note||'',openShelfStore:f.osAuto.store||'',openShelfConf:f.osAuto.conf||'',openShelfAt:todayStr()});
+    else if(ex0)Object.assign(pdata,osPatch(ex0,days,!!f.osOk));else if(days>0)pdata.openShelfSrc='zelf'}
   let saved=[];M.tx(()=>{if(!pid||!M.S.products[pid]){const ex=(f.barcode&&M.findProductByBarcode(f.barcode))||M.findProductByName(f.name,f.brand);if(ex&&norm(ex.brand)===norm(f.brand))pid=ex.id}
     if(pid){const old=M.S.products[pid];const patch={id:pid};Object.keys(pdata).forEach(k=>{if(pdata[k]!==''&&pdata[k]!=null&&JSON.stringify(pdata[k])!==JSON.stringify(old[k]))patch[k]=pdata[k]});if(!CF.photo&&old.photo&&CF.pref.photo!==undefined&&!CF.pref.photo)patch.photo='';if(Object.keys(patch).length>1)M.saveProduct(patch)}
     else{if(convert(1,f.unit,pdata.unit,pdata)==null||!f.punitTouched&&pdata.unit!==f.unit&&!pdata.packSize)pdata.unit=f.unit;pid=M.saveProduct(pdata).id}
     if(f.mode&&f.mode!=='new'&&M.S.lots[f.mode]){const l=M.S.lots[f.mode];const c=convert(qty*count,f.unit,l.unit,M.S.products[pid]);if(c==null)throw new Error('Eenheid past niet bij de gekozen partij.');saved.push(M.topUpLot(f.mode,c))}
     else for(let i=0;i<count;i++)saved.push(M.addLot({productId:pid,locationId:f.locationId,qty,unit:f.unit,purchaseDate:pdate,dateType:f.dateType,expiryDate:f.expiryDate,freezeDate:f.freezeDate,opened:f.opened,batch:f.batch,notes:f.notes,needsCheck:f.needsCheck,source:f.source||'manueel'}))});
-  CF.saved=true;const p=M.S.products[pid];UI.scan.session.unshift({pid,lots:saved.map(l=>l.id),label:p.name+' · '+(count>1?count+' × ':'')+fmtQty(qty,f.unit)+' → '+M.locName(f.locationId),at:new Date()});
+  CF.saved=true;const p=M.S.products[pid];if(typeof Shelf!=='undefined'&&!Number(p.openShelfDays)&&!M.openShelfSrc(p))Shelf.soon(3000);UI.scan.session.unshift({pid,lots:saved.map(l=>l.id),label:p.name+' · '+(count>1?count+' × ':'')+fmtQty(qty,f.unit)+' → '+M.locName(f.locationId),at:new Date()});
   closeModal();toast('Opgeslagen: '+p.name+(count>1?' ('+count+' afzonderlijke items)':'')+' in '+M.locName(f.locationId)+'.');
   if(CF.ctx==='scanner'){Scanner.refresh();if(next&&!(typeof RMT!=='undefined'&&RMT.role==='host')&&(UI.scan.mode==='barcode'||Scanner.wasRunning))setTimeout(()=>A.camStart().catch(e=>toast(e.message,'error')),200);else if(next&&UI.scan.mode==='manueel')setTimeout(()=>openConfirm({}),150);else if(next&&UI.scan.mode==='zoeken')setTimeout(()=>{const q=$('#sr-q');if(q){q.focus();q.select&&q.select()}},150)}};
 A.addLotFor=d=>{const p=M.S.products[d.id];if(!p)return;openConfirm(Object.assign(prefFromProduct(p),{source:'manueel'}),'inline')};
 A.editProduct=d=>{const p=M.S.products[d.id];const cats=M.categories();
   openModal({title:'Product bewerken',gid:'dialog-edit-product',wide:true,body:'<div class="grid2"><div class="field span2"><label>Productnaam</label><input name="name" class="inp" value="'+esc(p.name)+'"></div><div class="field"><label>Merk</label><input name="brand" class="inp" value="'+esc(p.brand||'')+'"></div><div class="field"><label>Barcode / EAN</label><input name="barcode" class="inp mono" value="'+esc(p.barcode||'')+'"></div><div class="field"><label>Categorie</label><select name="category" class="inp" data-change="epCat"><option value="">—</option>'+sel(p.category||'',cats.map(c=>c.name))+'</select></div><div class="field"><label>Subcategorie</label><select name="sub" id="ep-sub" class="inp">'+subOptions(p.category,p.sub)+'</select></div><div class="span2">'+kindFields(p.kind||'',!!p.brandRequired,p.name)+'</div>'+
-    '<div class="field"><label>Eenheid voorraad</label><select name="unit" class="inp">'+sel(p.unit,UNITS.map(u=>[u.id,u.label]))+'</select></div><div class="field"><label>Minimumvoorraad (in die eenheid)</label><input name="minStock" type="number" step="any" min="0" class="inp" value="'+esc(p.minStock||'')+'"></div><div class="field"><label>Inhoud per verpakking</label><input name="packSize" type="number" step="any" min="0" class="inp" value="'+esc(p.packSize||'')+'"></div><div class="field"><label>Eenheid inhoud</label><select name="packUnit" class="inp">'+sel(p.packUnit||'g',[['g','gram'],['ml','milliliter'],['kg','kilogram'],['l','liter'],['stuks','stuks']])+'</select></div><div class="field"><label>Houdbaar na opening (dagen)</label><input name="openShelfDays" type="number" min="0" class="inp" value="'+esc(p.openShelfDays||'')+'"></div><div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="reorderWhenEmpty" '+(p.reorderWhenEmpty===false?'':'checked')+'> Op lijst als het op is</label></div><div class="field span2"><label>Opmerkingen</label><textarea name="notes" class="inp">'+esc(p.notes||'')+'</textarea></div>'+
+    '<div class="field"><label>Eenheid voorraad</label><select name="unit" class="inp">'+sel(p.unit,UNITS.map(u=>[u.id,u.label]))+'</select></div><div class="field"><label>Minimumvoorraad (in die eenheid)</label><input name="minStock" type="number" step="any" min="0" class="inp" value="'+esc(p.minStock||'')+'"></div><div class="field"><label>Inhoud per verpakking</label><input name="packSize" type="number" step="any" min="0" class="inp" value="'+esc(p.packSize||'')+'"></div><div class="field"><label>Eenheid inhoud</label><select name="packUnit" class="inp">'+sel(p.packUnit||'g',[['g','gram'],['ml','milliliter'],['kg','kilogram'],['l','liter'],['stuks','stuks']])+'</select></div><div class="field"><label>Houdbaar na opening (dagen)</label><input name="openShelfDays" type="number" min="0" class="inp" value="'+esc(p.openShelfDays||'')+'">'+osHint(osInfo(p),false)+'</div><div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="reorderWhenEmpty" '+(p.reorderWhenEmpty===false?'':'checked')+'> Op lijst als het op is</label></div><div class="field span2"><label>Opmerkingen</label><textarea name="notes" class="inp">'+esc(p.notes||'')+'</textarea></div>'+
     '<div class="field span2"><label>Productfoto</label><div class="row">'+thumb(p)+'<label class="btn sm" style="cursor:pointer">📷 Andere foto<input type="file" accept="image/*" capture="environment" hidden data-change="epPhoto" data-id="'+esc(p.id)+'"></label>'+(p.photo?'<button type="button" class="btn sm ghost" data-act="epPhotoDel" data-id="'+esc(p.id)+'">Foto verwijderen</button>':'')+'</div></div></div>',
     foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="editProductOk" data-id="'+esc(p.id)+'">Opslaan</button>'})};
 A.epCat=(d,el)=>{$('#ep-sub').innerHTML=subOptions(el.value,'')};
 A.epPhoto=async(d,el)=>{const f=el.files&&el.files[0];if(!f)return;const r=await resizeImage(f,360,0.72);M.saveProduct({id:d.id,photo:r.dataUrl});toast('Foto bijgewerkt.')};
 A.epPhotoDel=d=>{M.saveProduct({id:d.id,photo:''});toast('Foto verwijderd.')};
-A.editProductOk=d=>{const f=formData($('.modal'));const old=M.S.products[d.id];if(old.unit!==f.unit&&M.lotsOf(d.id).length)toast('Let op: bestaande partijen behouden hun eigen eenheid.');M.saveProduct(Object.assign({id:d.id},f,{minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,openShelfDays:Number(f.openShelfDays)||0}));closeModal();toast('Product opgeslagen.')};
+A.editProductOk=d=>{const f=formData($('.modal'));const old=M.S.products[d.id];Object.assign(f,osPatch(old,Number(f.openShelfDays)||0,!!f.osOk));delete f.osOk;if(old.unit!==f.unit&&M.lotsOf(d.id).length)toast('Let op: bestaande partijen behouden hun eigen eenheid.');M.saveProduct(Object.assign({id:d.id},f,{minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,openShelfDays:Number(f.openShelfDays)||0}));closeModal();toast('Product opgeslagen.')};
 
 /* ---------- Scanner-weergave ---------- */
 function scanLocBar(){const cam=['barcode','uit','ocr','etiket','voedsel'].includes(UI.scan.mode);return '<div class="card scan-loc" data-glean-id="scan-default-loc"><div class="row" style="gap:12px;align-items:center"><label for="scan-loc" class="lbl" style="margin:0">'+(UI.scan.mode==='uit'?'Afboeken uit':'Opslaan in')+'</label><select id="scan-loc" class="inp grow" style="min-width:180px;flex:1" data-change="scanLoc"><option value="">Automatisch voorstellen</option>'+sel(UI.scan.loc||'',M.locations().map(l=>[l.id,(l.icon?l.icon+' ':'')+l.name]))+'</select>'+(cam?'<label class="check" style="white-space:nowrap"><input type="checkbox" data-change="setAutoCam" '+(Scanner.autoOn()?'checked':'')+'> Camera automatisch starten</label>':'')+'</div><div class="hint" style="margin-top:6px">'+(UI.scan.loc?'Elk product gaat standaard naar <b>'+esc(M.locName(UI.scan.loc))+'</b>. In het bevestigingsvenster kun je per product nog een andere plaats kiezen.':'De app stelt per product een plaats voor (bv. diepvries voor diepvriesproducten). In het bevestigingsvenster kun je altijd een andere plaats kiezen.')+'</div></div>'}
@@ -1709,6 +1732,28 @@ function kindFields(kind,req,name){const kinds=[...new Set(M.products().map(M.ki
     '<div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="brandRequired" data-glean-id="brand-required" '+(req?'checked':'')+'> Alleen dit merk kopen</label></div></div>'+
     '<datalist id="kind-list">'+kinds.map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>'+
     '<div class="hint" style="margin-top:-4px">Op je boodschappenlijst komt de soort, zonder merk (bv. "Honing"). Producten van dezelfde soort tellen samen voor je minimumvoorraad. Leeg = de productnaam.</div>'}
+
+/* ---------- Houdbaar na opening: bron tonen en bijhouden ---------- */
+function osInfo(p){return p?{src:M.openShelfSrc(p),days:Number(p.openShelfDays)||0,store:p.openShelfStore||'',conf:p.openShelfConf||'',note:p.openShelfNote||''}:{src:'',days:0}}
+function cfOpenInfo(p){if(p.osAuto)return Object.assign({},p.osAuto);const ex=p.existingProductId&&M.S.products[p.existingProductId];return ex?osInfo(ex):{src:'',days:0}}
+const OS_STORE={koelkast:'in de koelkast',kast:'in de kast',diepvries:'in de diepvries',kamertemperatuur:'op kamertemperatuur'};
+function osHint(i,isNew){let t='';
+  if(i.src==='etiket')t='📄 Van het etiket'+(i.note?': "'+esc(i.note)+'"':'')+'.';
+  else if(i.src==='geschat')t='✨ Geschat door Gemini'+(OS_STORE[i.store]?', bewaren '+OS_STORE[i.store]:'')+(i.conf==='laag'?'. Verschilt sterk per merk':'')+'. Staat er iets anders op het etiket? Vul dat in.<label class="check" style="margin-top:4px"><input type="checkbox" name="osOk"> Nagekeken: klopt</label>';
+  else if(i.src==='nvt')t='Niet van toepassing. Vul een aantal dagen in als het toch nodig is.';
+  else if(!i.days&&typeof Shelf!=='undefined'&&Shelf.on())t=isNew?'Leeg laten? Dan schat de app het straks automatisch.':'Leeg laten? Dan schat de app het automatisch.';
+  return t?'<div class="hint" data-glean-id="open-shelf-src" style="margin-top:4px">'+t+'</div>':''}
+/* Wat er verandert als je de waarde zelf aanpast: andere waarde = eigen waarde; leegmaken = niet van toepassing (niet opnieuw schatten). */
+function osPatch(old,days,ok){const prev=Number(old&&old.openShelfDays)||0;const clear={openShelfStore:'',openShelfConf:'',openShelfNote:''};
+  if(days===prev)return ok&&M.openShelfSrc(old)==='geschat'?{openShelfSrc:'zelf',openShelfConf:''}:{};
+  if(days>0)return Object.assign({openShelfSrc:'zelf'},clear);
+  return Object.assign({openShelfSrc:prev>0?'nvt':''},clear)}
+/* Waarde van het etiket in het bevestigingsvenster zetten; een eigen waarde blijft staan. */
+function cfSetOpen(days,src,note){if(!CF||!(days>0))return '';const p=CF.pref;const inp=$('.modal [name=openShelfDays]');const cur=Number(inp?inp.value:p.openShelfDays)||0;
+  const ex=p.existingProductId&&M.S.products[p.existingProductId];
+  const mine=cur>0&&!(p.osAuto&&cur===p.osAuto.days)&&!(ex&&cur===(Number(ex.openShelfDays)||0)&&M.openShelfSrc(ex)!=='zelf');
+  if(mine&&cur!==days)return 'Het etiket zegt '+days+' dagen na opening; je eigen waarde ('+cur+' dagen) blijft staan.';
+  p.openShelfDays=days;p.osAuto={days,src,note:note||''};if(inp)inp.value=String(days);return 'Houdbaar na opening: '+days+' dagen.'}
 
 /* ---------- Gezondheid: weergave ---------- */
 try{const c=JSON.parse(localStorage.getItem('vb-addext')||'null');if(c&&c.map)setAdditiveExt(c.map)}catch(e){}
@@ -1900,6 +1945,7 @@ async function cfOcrFrom(canvas){if(!CF)return;CF.ai={busy:'Verpakking lezen…'
   if(!o.err){put('name',fl.name,'naam');put('brand',fl.brand,'merk');if(fl.qty&&(!p.qty||p.qty===1)){p.qty=fl.qty;p.unit=fl.unit||p.unit;filled.push('inhoud')}
     if(fl.category&&!p.category){p.category=fl.category;p.sub=fl.sub||''}else if(!p.category&&p.name){const c=classify(p.name);if(c){p.category=c.category;p.sub=c.sub}}
     if(fl.expiryDate&&!p.expiryDate){p.expiryDate=fl.expiryDate;p.dateType=fl.dateType||'THT';filled.push('vervaldatum')}
+    if(fl.openDays){const m=cfSetOpen(fl.openDays,'etiket','');if(m&&!/blijft/.test(m))filled.push('houdbaar na opening')}
     if(!CF.photo&&o.thumb)CF.photo=o.thumb;p.ocrText=o.text;p.ocrConf=o.conf}
   CF.ai={busy:'',msg:o.err?'Verpakking lezen lukte niet ('+o.err+'). De OCR-bibliotheek wordt de eerste keer van internet geladen.':filled.length?'Ingevuld van de verpakking: '+filled.join(', ')+'. Controleer de gegevens.':'Geen bruikbare tekst gevonden. Fotografeer de voorkant recht van voren, met veel licht.',kind:o.err||!filled.length?'warn':''};
   paintModal();if(!o.err)await findCandidates();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg+(CF.ai.cands&&CF.ai.cands.length?' '+CF.ai.cands.length+' mogelijke producten gevonden.':''))}
@@ -1996,7 +2042,7 @@ function parseNutritionText(text){const o={};const lines=String(text||'').split(
   const ing=all.match(/(ingredi[eë]nten|ingr[ée]dients|zutaten)\s*:?\s*(.{10,1200}?)(?:\.\s|$)/i);if(ing)o.ingredients=ing[2].trim();
   o.basis=/100\s*ml/i.test(all)?'100ml':/100\s*g/i.test(all)?'100g':'onbekend';o.kind=o.basis==='100ml'?'drank':'';return o}
 /* Antwoord van Gemini (Nederlandse veldnamen) → interne velden */
-function fromGemini(x){x=x||{};const o={kj:x.energieKj,kcal:x.energieKcal,fat:x.vet,sat:x.verzadigd,carbs:x.koolhydraten,sugars:x.suikers,fiber:x.vezels,protein:x.eiwitten,salt:x.zout,sodium:x.natrium,fvl:x.fruitGroentenPct,basis:x.basis,portion:x.portieGram,ingredients:x.ingredienten||'',additives:(x.eNummers||[]).map(addCode),sweet:!!x.zoetstoffen,organic:!!x.bio,kind:x.soort||''};
+function fromGemini(x){x=x||{};const o={kj:x.energieKj,kcal:x.energieKcal,fat:x.vet,sat:x.verzadigd,carbs:x.koolhydraten,sugars:x.suikers,fiber:x.vezels,protein:x.eiwitten,salt:x.zout,sodium:x.natrium,fvl:x.fruitGroentenPct,basis:x.basis,portion:x.portieGram,ingredients:x.ingredienten||'',additives:(x.eNummers||[]).map(addCode),sweet:!!x.zoetstoffen,organic:!!x.bio,kind:x.soort||'',openDays:Number(x.naOpeningDagen)>0?Math.round(Number(x.naOpeningDagen)):null,openText:x.naOpeningTekst||''};
   const map={energieKj:'kj',energieKcal:'kcal',vet:'fat',verzadigd:'sat',koolhydraten:'carbs',suikers:'sugars',vezels:'fiber',eiwitten:'protein',zout:'salt',natrium:'salt'};o.unsure=(x.onzeker||[]).map(k=>map[k]).filter(Boolean);o.readable=x.leesbaar!==false;
   Object.keys(o).forEach(k=>{if(o[k]===undefined||o[k]===null)delete o[k]});return o}
 /* Per-portiewaarden omrekenen naar 100 g/ml */
@@ -2042,10 +2088,13 @@ async function nutRead(dataUrl,canvas,kind,st){st=st||NUT;if(!st)return;st.busy=
     const filled=[];const v=st.v;NUT_FIELDS.concat([['fvl'],['kind']]).forEach(([k,lbl])=>{if(L[k]==null||L[k]==='')return;if(st.touched[k]&&v[k]!=null&&v[k]!=='')return;if(kind==='ingredienten'&&v[k]!=null&&v[k]!=='')return;v[k]=L[k];if(lbl)filled.push(lbl.replace('waarvan ',''))});
     if(L.ingredients&&(!v.ingredients||!st.touched.ingredients))v.ingredients=L.ingredients;if(L.additives&&L.additives.length)v.additives=Array.from(new Set((v.additives||[]).concat(L.additives)));
     if(L.sweet)v.sweet=true;if(L.organic)v.organic=true;v.engine=r.engine;st.engine=r.engine;
+    if(!(L.openDays>0)&&r.text){const od=openDaysFromText(r.text);if(od)L.openDays=od}
+    let osMsg='';if(L.openDays>0){st.openDays=L.openDays;st.openText=L.openText||'';const m=osFromLabel(st);if(/blijft/.test(m))osMsg=m;else filled.push('houdbaar na opening')}
     st.unsure=r.engine==='lokaal'?NUT_FIELDS.map(f=>f[0]).filter(k=>L[k]!=null):(L.unsure||[]);
-    const ok=filled.length||L.ingredients;
+    const ok=filled.length||L.ingredients||st.openDays;
     st.msg=!ok?'Geen voedingswaarden gevonden op de foto. Fotografeer de tabel recht van voren, scherp en met veel licht — of vul de waarden zelf in.':
       (r.engine==='gemini'?'Gelezen met Gemini':'Gelezen op dit toestel (Tesseract'+(r.why?' — Gemini niet gebruikt: '+r.why:'')+')')+': '+(filled.length?Array.from(new Set(filled)).join(', '):'')+(L.ingredients?(filled.length?' + ':'')+'ingrediënten':'')+'. '+(L._conv?'Omgerekend van een portie van '+fmtNum(st.portion)+' g. ':'')+(r.engine==='lokaal'?'Kijk alle getallen na (oranje).':st.unsure.length?'Kijk de oranje velden na.':'Kijk de waarden even na.');
+    if(osMsg)st.msg+=' '+osMsg;
     st.kind=!ok||r.engine==='lokaal'||st.unsure.length?'warn':'';if(r.engine==='gemini'&&r.used!=null)st.msg+=' (AI-aanvraag '+r.used+'/'+r.max+' vandaag)'}
   catch(e){st.msg=e.message||String(e);st.kind='warn'}
   finally{st.busy='';repaintNut();if(typeof A11y!=='undefined'&&A11y.say)try{A11y.say(st.msg)}catch(e){}}}
@@ -2061,9 +2110,17 @@ let NE=null;
 A.nutEdit=d=>{const p=M.S.products[d.id];if(!p)return;NE={pid:p.id,st:nutState(p.health)};NE.st.open=true;
   openModal({title:'Voedingswaarden van het etiket',gid:'dialog-nutrition',wide:true,body:()=>'<div class="small muted" style="margin-bottom:8px"><b>'+esc(p.name)+'</b>'+(p.brand?' · '+esc(p.brand):'')+' — waarden per 100 g of 100 ml.</div>'+nutEditor(NE.st),
     foot:()=>'<button type="button" class="btn" data-act="closeModal">Annuleren</button>'+(p.health&&p.health.src==='etiket'?'<button type="button" class="btn danger ghost" data-act="nutClear" data-id="'+esc(p.id)+'">Etiketgegevens wissen</button>':'')+'<button type="button" class="btn primary" data-act="nutSave" data-id="'+esc(p.id)+'">Opslaan</button>',onClose:()=>{NE=null;NUT=null}})};
-A.nutSave=d=>{const p=M.S.products[d.id];if(!p||!NE)return;if(!nutHasData(NE.st.v))throw new Error('Vul minstens een paar voedingswaarden in (of fotografeer het etiket).');const h=labelHealth(NE.st.v,p.health);quietSave(p.id,{health:h});closeModal();
+A.nutSave=d=>{const p=M.S.products[d.id];if(!p||!NE)return;const od=NE.st.openDays;if(!nutHasData(NE.st.v)&&!od)throw new Error('Vul minstens een paar voedingswaarden in (of fotografeer het etiket).');
+  if(od){const n=M.applyOpenShelf([{id:p.id,days:od,src:'etiket',note:NE.st.openText||''}]);if(!nutHasData(NE.st.v)){closeModal();toast(n?'Houdbaar na opening: '+od+' dagen (van het etiket).':'Het etiket zegt '+od+' dagen na opening. Je eigen waarde blijft staan.');return}}
+  const h=labelHealth(NE.st.v,p.health);quietSave(p.id,{health:h});closeModal();
   const e=h.nutri?estimateScore(h,hSet().addRisk):null;toast(h.nutri?'Opgeslagen — Nutri-Score '+h.nutri.toUpperCase()+(e?', gezondheidsscore ≈ '+e.score+'/100':'')+' (geschat uit etiket).':'Opgeslagen. Voor een Nutri-Score zijn minstens energie, suikers, verzadigd vet en zout nodig.')};
 A.nutClear=d=>{const p=M.S.products[d.id];if(!p)return;quietSave(p.id,{health:null});closeModal();toast('Etiketgegevens gewist.');if(p.barcode)refreshHealth(p.id,true)};
+
+/* Etiket zegt hoelang het na opening houdbaar is: in het bevestigingsvenster invullen (eigen waarde blijft staan). */
+function osFromLabel(st){const d=st.openDays;if(!(d>0))return '';
+  if(typeof CF!=='undefined'&&CF&&CF.nut===st&&typeof cfSetOpen==='function')return cfSetOpen(d,'etiket',st.openText||'');
+  if(typeof NE!=='undefined'&&NE&&NE.st===st){const p=M.S.products[NE.pid];return p&&M.openShelfSrc(p)==='zelf'&&Number(p.openShelfDays)!==d?'Het etiket zegt '+d+' dagen na opening; je eigen waarde ('+p.openShelfDays+' dagen) blijft staan.':'Houdbaar na opening: '+d+' dagen (wordt opgeslagen).'}
+  return ''}
 
 /* ===================== RECEPTEN & WEEKPLANNER ===================== */
 const MEAL_LABEL={ontbijt:'Ontbijt',lunch:'Lunch',avond:'Avondmaal'};
@@ -2366,7 +2423,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='2.8 · 21-11-2026';
+const APP_VERSION='2.9 · 21-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -2409,7 +2466,7 @@ const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fail
           keys.forEach(k=>{if(self.outbox[k]&&self.outbox[k].t===sent[k])delete self.outbox[k]});
           got+=self.applyChanges(j.changes);self.cfg.since=j.rev;self.saveCfg();self.saveOutbox(true);self.keepInfo(j);
           if(!(j.more||self.count()>0||self.again)||++rounds>=25)break}
-        self.lastOk=new Date();LS.set('syncLast',self.lastOk.toISOString());self.err='';self.fails=0;
+        self.lastOk=new Date();LS.set('syncLast',self.lastOk.toISOString());self.err='';self.fails=0;if(typeof Shelf!=='undefined')Shelf.soon(6000);
         if(manual)toast('Gesynchroniseerd'+(got?' — '+plural(got,'wijziging','wijzigingen')+' ontvangen':'')+'.');return {ok:true,got}}
       catch(e){self.saveOutbox(true);self.err=e.message;self.fails++;if(e.auth)self.err='Koppeling geweigerd: '+e.message;
         if(manual)toast(self.err,'error');else if(self.fails<6)self.soon(Math.min(15000*Math.pow(2,self.fails),600000));return {ok:false,error:self.err}}
@@ -2470,6 +2527,51 @@ A.syncChoose=async d=>{const mode=d.mode;closeAllModals();toast(mode==='replace'
 A.syncNow=async()=>{await Sync.run(true);render(true)};
 A.syncUnpair=()=>confirmBox('Ontkoppelen','Dit toestel stopt met synchroniseren. Je voorraad blijft op dit toestel en in Google staan. '+(Sync.count()?Sync.count()+' wijziging(en) zijn nog niet verstuurd en gaan dan niet naar Google.':''),'Ontkoppelen',()=>{Sync.unpair();render(true);toast('Ontkoppeld.')},true);
 A.syncTestMail=async()=>{if(Sync.count())await Sync.run(false);toast('Testmail aanvragen…');const j=await Sync.call('testmail',{});toast(j.message||'Testmail verstuurd.')};
+
+/* ---------- Houdbaar na opening automatisch invullen ----------
+ * Volgorde: eigen waarde > etiket > schatting van Gemini (via je eigen Google-script, actie aiShelf).
+ * Gemini krijgt alleen productnaam, merk, soort en categorie. Producten zonder antwoord worden pas na 7 dagen opnieuw gevraagd.
+ */
+const SHELF_BATCH=40;
+const Shelf={busy:false,_t:null,
+  on(){return LS.get('shelfAI',true)!==false},
+  ready(){return typeof Sync!=='undefined'&&!!Sync.cfg&&!(typeof navigator!=='undefined'&&navigator.onLine===false)},
+  msg(){return LS.get('shelfMsg',null)},
+  setMsg(text,kind){LS.set('shelfMsg',{text,kind:kind||'',at:nowISO()})},
+  tried(){return LS.get('shelfTried',{})||{}},
+  todo(all){const tr=this.tried(),today=todayStr();return M.openShelfTodo().filter(p=>all||!tr[p.id]||daysUntil(today,tr[p.id])>=7)},
+  soon(ms){if(!this.on()||!this.ready())return;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{this._t=null;this.run(false).catch(()=>{})},ms||4000)},
+  async run(manual){if(this.busy)return {n:0,busy:true};
+    if(!this.ready())throw new Error(typeof Sync!=='undefined'&&Sync.cfg?'Je bent offline. Probeer het opnieuw zodra je verbinding hebt.':'Koppel eerst je Google-script (Instellingen › Google-synchronisatie). Daarlangs vraagt de app het aan Gemini.');
+    if(!manual){if(!this.on())return {n:0};const st=LS.get('shelfStop',null);if(st&&st.until>Date.now())return {n:0}}
+    const list=this.todo(!!manual);if(!list.length){if(manual)this.setMsg('Alle producten hebben al een houdbaarheid na opening.','');return {n:0}}
+    this.busy=true;if(UI.view==='instellingen')scheduleRender();let n=0,asked=0,err='',code='';const maxB=manual?10:3;
+    try{for(let i=0;i<list.length&&i<maxB*SHELF_BATCH;i+=SHELF_BATCH){const part=list.slice(i,i+SHELF_BATCH);
+        const j=await Sync.call('aiShelf',{products:part.map(p=>({id:p.id,name:p.name,brand:p.brand||'',kind:p.kind||'',category:p.category||'',sub:p.sub||''}))},null,120000);
+        n+=M.applyOpenShelf((j.items||[]).map(x=>({id:x.id,days:x.days,nvt:!!x.nvt,store:x.store,conf:x.conf,src:'geschat'})));asked+=part.length;
+        const tr=this.tried();part.forEach(p=>{tr[p.id]=todayStr()});Object.keys(tr).forEach(id=>{if(!M.S.products[id])delete tr[id]});LS.set('shelfTried',tr)}
+      LS.set('shelfStop',null)}
+    catch(e){code=e.code||'';const old=/Onbekende actie/i.test(e.message||'');err=old?'je Google-script is nog een oudere versie. Vervang Code.gs en Kern.gs en maak een nieuwe versie van de implementatie.':(e.message||String(e));
+      if(old||['nokey','limit','badkey','scope'].includes(code))LS.set('shelfStop',{until:Date.now()+(code==='limit'?6:24)*3600000,code:old?'old':code})}
+    finally{this.busy=false}
+    const left=this.todo(false).length;
+    if(err)this.setMsg((n?plural(n,'product','producten')+' ingevuld, daarna lukte het niet: ':'Schatten lukte niet: ')+err,'warn');
+    else this.setMsg(n?plural(n,'product','producten')+' ingevuld met een schatting van Gemini'+(left?' · nog '+left+' te doen':'')+'.':'Gemini kon voor '+(asked===1?'dit product':'deze producten')+' geen termijn geven. Vul ze zelf in.',n?'':'warn');
+    if(n&&!manual&&typeof toast==='function')toast('Houdbaar na opening geschat voor '+plural(n,'product','producten')+'. Je ziet "geschat" bij het product.');
+    if(UI.view==='instellingen')scheduleRender();
+    return {n,err,code,left}}};
+function shelfSection(){const s=M.openShelfStats();const m=Shelf.msg();const est=M.products().filter(p=>M.openShelfSrc(p)==='geschat').sort((a,b)=>String(a.name).localeCompare(String(b.name),'nl'));
+  const tag=(n,t,c)=>'<span class="tag'+(c?' '+c:'')+'">'+n+' '+t+'</span>';
+  let h='<div class="section" data-glean-id="settings-open-shelf"><h3>Houdbaar na opening</h3><p class="muted small" style="margin-top:0">Staat het op het etiket, dan leest de app het mee als je het etiket fotografeert. Anders schat Google Gemini een gangbare, voorzichtige termijn. Gemini krijgt alleen productnaam, merk, soort en categorie. Een waarde die je zelf invult, wordt nooit overschreven.</p>';
+  h+='<label class="check"><input type="checkbox" '+(Shelf.on()?'checked':'')+' data-change="shelfToggle"> Automatisch schatten voor nieuwe en bestaande producten</label>';
+  h+='<div class="row small" style="margin-top:8px">'+tag(s.etiket,'van het etiket')+tag(s.geschat,'geschat',s.geschat?'lv-yellow':'')+tag(s.zelf,'zelf ingevuld')+(s.nvt?tag(s.nvt,'niet van toepassing'):'')+tag(s.todo,'nog onbekend',s.todo?'lv-orange':'')+'</div>';
+  if(typeof Sync==='undefined'||!Sync.cfg)h+='<div class="note warn" style="margin-top:8px">Koppel eerst je Google-script (tabblad Google-synchronisatie) en stel daar een Gemini-sleutel in. Daarlangs vraagt de app het aan Gemini.</div>';
+  h+='<div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="shelfRun"'+(Shelf.busy?' disabled':'')+'>'+(Shelf.busy?'⏳ Bezig met schatten…':'✨ Nu invullen'+(s.todo?' ('+s.todo+')':''))+'</button></div>';
+  if(m&&m.text)h+='<div class="note'+(m.kind?' '+m.kind:'')+'" role="status" style="margin-top:8px">'+esc(m.text)+'</div>';
+  if(est.length)h+='<details style="margin-top:10px"><summary>Geschatte waarden nakijken ('+est.length+')</summary><div class="list" style="margin-top:6px">'+est.slice(0,60).map(p=>'<div class="li"><div class="grow" style="min-width:0"><div class="main-t">'+esc(p.name)+(p.brand?' <span class="muted" style="font-weight:400">· '+esc(p.brand)+'</span>':'')+'</div><div class="sub-t">'+p.openShelfDays+' dagen'+(OS_STORE[p.openShelfStore]?', '+OS_STORE[p.openShelfStore]:'')+(p.openShelfConf==='laag'?' · verschilt sterk per merk':'')+'</div></div><div class="acts"><button type="button" class="btn sm" data-act="editProduct" data-id="'+esc(p.id)+'">✎ Aanpassen</button></div></div>').join('')+'</div></details>';
+  return h+'</div>'}
+A.shelfToggle=(d,el)=>{LS.set('shelfAI',!!el.checked);if(el.checked){LS.set('shelfStop',null);Shelf.soon(500)}render()};
+A.shelfRun=async()=>{const r=await Shelf.run(true);const m=Shelf.msg();toast(m&&m.text||'Klaar.',r&&r.err?'error':undefined);render()};
 
 /* ===================== TELEFOON ALS SCANNER VOOR DE TABLET =====================
  * Tablet ("host") opent een korte scankoppeling via je eigen Google-script; de telefoon stuurt barcodes en
@@ -2602,6 +2704,7 @@ VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.s
   if(tab==='houdbaarheid'){const t=st.thresholds;h+='<div class="section"><h3>Waarschuwingstermijnen</h3><div class="stack"><div class="row"><span class="tag lv-expired" style="width:140px">Vervallen</span><span class="muted small">datum voorbij</span></div><div class="row"><span class="tag lv-red" style="width:140px">Rood/oranje</span>0 tot '+num('thresholds.red',t.red,0,30)+' dagen</div><div class="row"><span class="tag lv-orange" style="width:140px">Oranje</span>tot '+num('thresholds.orange',t.orange,1,60)+' dagen</div><div class="row"><span class="tag lv-yellow" style="width:140px">Geel</span>tot '+num('thresholds.yellow',t.yellow,1,120)+' dagen</div><div class="row"><span class="tag lv-ok" style="width:140px">Normaal</span><span class="muted small">daarna</span></div></div></div>';
     h+='<div class="section"><h3>Kader "Eerst opgebruiken"</h3><div class="row">Toon producten die binnen '+num('useFirstDays',st.useFirstDays,0,60)+' dagen vervallen</div></div>';
     h+='<div class="section"><h3>Bewaartermijn in de diepvries</h3><p class="muted small" style="margin-top:0">Gebruikt om automatisch een eigen gebruiksdatum voor te stellen bij het invriezen (in maanden).</p><div class="grid3">'+Object.keys(st.freezeMonths).filter(k=>k!=='_default').map(k=>'<div class="field"><label>'+esc(k)+'</label>'+num('freezeMonths.'+k,st.freezeMonths[k],1,36)+'</div>').join('')+'<div class="field"><label>Standaard (overige)</label>'+num('freezeMonths._default',st.freezeMonths._default,1,36)+'</div></div></div>'}
+  if(tab==='houdbaarheid')h+=shelfSection();
   if(tab==='meldingen'){const r=st.reminders;const perm='Notification' in window?Notification.permission:'unsupported';
     h+='<div class="section"><h3>Browsermeldingen</h3>'+(perm==='unsupported'?'<div class="note warn">Deze browser ondersteunt geen meldingen. Het meldingencentrum (🔔) in de app werkt wel altijd.</div>':'<div class="row"><label class="check"><input type="checkbox" '+(r.browser&&perm==='granted'?'checked':'')+' data-change="toggleBrowserNotif"> Browsermeldingen gebruiken</label><span class="tag '+(perm==='granted'?'lv-ok':perm==='denied'?'lv-expired':'')+'">toestemming: '+({granted:'gegeven',denied:'geweigerd',default:'nog niet gevraagd'}[perm])+'</span><button type="button" class="btn sm" data-act="testNotif">Testmelding</button></div>'+(perm==='denied'?'<div class="note warn" style="margin-top:8px">Meldingen zijn geblokkeerd. Sta ze toe via het slotje/de site-instellingen van je browser.</div>':''))+
       '<div class="note" style="margin-top:10px">Meldingen worden verstuurd terwijl de app open is (ook in een achtergrondtabblad). Echte pushmeldingen bij een volledig gesloten app vereisen een installatie als web-app met service worker én een pushserver — dat kan niet vanuit één zelfstandig bestand. Gemiste meldingen staan daarom altijd in het meldingencentrum 🔔.</div></div>';
