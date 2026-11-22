@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=arrow_upward,barcode_scanner,close,dark_mode,document_scanner,favorite,history,home,hourglass_top,install_mobile,inventory_2,light_mode,menu,notifications,nutrition,person,photo_camera,record_voice_over,restaurant_menu,settings,shelves,shopping_cart&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=arrow_upward,barcode_scanner,close,dark_mode,document_scanner,favorite,history,home,hourglass_top,install_mobile,inventory_2,light_mode,medication,menu,notifications,nutrition,person,photo_camera,record_voice_over,restaurant_menu,settings,shelves,shopping_cart&display=block">
 <style>/* =====================================================================
    Provisio — Material Design 3 (m3.material.io/styles)
    Kleur: tonaal schema afgeleid van Provisio-groen #2f6f5e (licht + donker)
@@ -417,6 +417,18 @@ html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition
 .rmt-pin{font-size:15px}.rmt-pin b{font-size:28px;letter-spacing:4px;margin-left:6px}
 .rmt-chip{position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;gap:4px;background:var(--md-sys-color-surface-container-high);color:var(--md-sys-color-on-surface);border-radius:999px;padding:4px;box-shadow:var(--md-sys-elevation-level2)}
 @media (min-width:900px){.rmt-chip{bottom:20px}}
+
+.dom-bar{margin:0 0 14px}
+.dom-bar .small{font-weight:400}
+blockquote{margin:6px 0;padding:4px 10px;border-left:3px solid var(--md-sys-color-outline-variant)}
+.lf-answer{margin-top:10px;padding:10px 12px;border-radius:12px;border:1px solid var(--md-sys-color-outline-variant)}
+.lf-text{max-height:340px;overflow:auto;line-height:1.5;margin-top:6px}
+.dom-bar{display:inline-flex;vertical-align:middle;margin-right:6px}
+.icon-btn.dom-order{vertical-align:middle;margin:0 0 14px}
+.rec-pick{cursor:pointer;gap:12px}
+.rec-pick.on{background:color-mix(in srgb,var(--md-sys-color-primary) 10%,transparent)}
+.rec-sel-bar{position:sticky;top:0;z-index:3;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);padding:8px 0;flex-wrap:wrap}
+details.card>summary{cursor:pointer}
 </style>
 </head>
 <body>
@@ -447,7 +459,7 @@ html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition
 
 /* ===== CORE: datamodel, voorraad, FIFO, houdbaarheid, recepten, weekplanner, OCR-parser, export ===== */
 const DAY=86400000;
-const COLS=['locations','products','lots','shopping','history','recipes','plan','meta'];
+const COLS=['locations','products','lots','shopping','history','recipes','plan','meta','intakes'];
 function pad(n){return String(n).padStart(2,'0')}
 function isoUTC(d){return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())}
 function todayStr(d){d=d||new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
@@ -498,6 +510,44 @@ const DEFAULT_LOCATIONS=[
  {id:'loc-koelkast',name:'Koelkast',type:'koelkast',icon:'🥛',order:6},
  {id:'loc-dv-keuken',name:'Diepvries keuken',type:'diepvries',icon:'❄️',order:7},
  {id:'loc-dv-kelder',name:'Diepvries Kelder',type:'diepvries',icon:'🧊',order:8}];
+/* ---------- Meerdere voorraden ---------- */
+const DOMAINS=[['keuken','Keuken','🍳'],['badkamer','Badkamer','🛁'],['medicijnen','Medicijnkast','💊'],['huishouden','Huishouden','🧺']];
+const DOMAIN_LOCATIONS=[
+ {id:'loc-badkamerkast',name:'Badkamerkast',type:'kast',icon:'🧴',order:20,domain:'badkamer'},
+ {id:'loc-lavabo',name:'Lade onder de lavabo',type:'lade',icon:'🧻',order:21,domain:'badkamer'},
+ {id:'loc-medicijnkast',name:'Medicijnkast',type:'kast',icon:'💊',order:30,domain:'medicijnen'},
+ {id:'loc-ehbo',name:'EHBO-doos',type:'andere',icon:'🩹',order:31,domain:'medicijnen'},
+ {id:'loc-berging',name:'Berging / wasplaats',type:'kast',icon:'🧺',order:40,domain:'huishouden',since:2},
+ {id:'loc-ondergootsteen',name:'Kast onder de gootsteen',type:'kast',icon:'🧽',order:41,domain:'huishouden',since:2}];
+const DOMAIN_CATEGORIES=[
+ {id:'cat-verzorging',name:'Lichaamsverzorging',aisle:'Drogisterij',domain:'badkamer',subs:['Douche en bad','Haarverzorging','Mond en tanden','Huid en gezicht','Deodorant','Scheren','Make-up','Zonnebescherming']},
+ {id:'cat-hygiene',name:'Hygiëne en papier',aisle:'Drogisterij',domain:'badkamer',subs:['Toiletpapier','Tissues','Maandverband en tampons','Watten en wattenstaafjes','Luiers','Schoonmaak badkamer']},
+ {id:'cat-geneesmiddelen',name:'Geneesmiddelen',aisle:'Apotheek',domain:'medicijnen',subs:['Pijn en koorts','Verkoudheid en keel','Hoest','Maag en darm','Allergie','Huid','Ogen en oren','Op voorschrift']},
+ {id:'cat-ehbo',name:'EHBO',aisle:'Apotheek',domain:'medicijnen',subs:['Pleisters en verband','Ontsmetting','Thermometer en hulpmiddelen']},
+ {id:'cat-supplementen',name:'Vitaminen en supplementen',aisle:'Apotheek',domain:'medicijnen',subs:['Vitaminen','Mineralen','Overige supplementen']},
+ {id:'cat-was',name:'Was',aisle:'Huishouden',domain:'huishouden',since:2,subs:['Wasmiddel','Wasverzachter','Vlekkenmiddel','Wasparfum en doekjes']},
+ {id:'cat-vaat',name:'Vaat',aisle:'Huishouden',domain:'huishouden',since:2,subs:['Vaatwastabletten','Glansspoelmiddel','Vaatwaszout','Afwasmiddel','Sponzen en borstels']},
+ {id:'cat-schoonmaak',name:'Schoonmaak',aisle:'Huishouden',domain:'huishouden',since:2,subs:['Allesreiniger','Wc-reiniger','Ontkalker','Glas en ramen','Vloer','Schoonmaakdoekjes']},
+ {id:'cat-papierzakken',name:'Papier, folie en zakken',aisle:'Huishouden',domain:'huishouden',since:2,subs:['Keukenrol','Vuilniszakken','Aluminium- en huishoudfolie','Diepvries- en boterhamzakjes','Bakpapier']},
+ {id:'cat-huis-overig',name:'Overig huishouden',aisle:'Huishouden',domain:'huishouden',since:2,subs:['Batterijen','Lampen','Kaarsen en lucifers','Insecten en ongedierte']}];
+const DOMAIN_AISLES=['Drogisterij','Apotheek','Huishouden'];
+const DOMAINS_V=2;
+/* Huishouden: wasmiddel, vaat, schoonmaak, papier. Specifiek genoeg om vóór de voedingsregels te gaan (vaatwaszout ≠ keukenzout). */
+const HOUSE_RULES=[[/wasverzachter|softener|adoucissant|lenor|silan|robijn zacht/,'Was','Wasverzachter'],[/vlekverwijder|vlekkenmiddel|vanish|stain remover|detachant/,'Was','Vlekkenmiddel'],
+ [/wasparfum|wasdoekje|kleurvanger|colour catcher|anti-verkleur/,'Was','Wasparfum en doekjes'],[/(?<!af)wasmiddel|waspoeder|wascapsule|waspod|laundry|lessive|ariel|dixan|persil|robijn|omo\b|(?<!vaat)wastablet/,'Was','Wasmiddel'],
+ [/glansspoel|rinse aid|liquide de rincage|spoelglans/,'Vaat','Glansspoelmiddel'],[/vaatwaszout|onthardingszout|zout voor (de )?vaatwas|dishwasher salt|sel regenerant/,'Vaat','Vaatwaszout'],
+ [/vaatwas|vaatwastablet|dishwasher|lave-vaisselle|finish (all in 1|quantum|powerball)|sun (all in 1|tablet)/,'Vaat','Vaatwastabletten'],[/afwasmiddel|dreft|dish ?soap|liquide vaisselle|handafwas|washing up/,'Vaat','Afwasmiddel'],
+ [/\bspons\b|schuurspons|afwasborstel|vaatdoek/,'Vaat','Sponzen en borstels'],[/wc-reiniger|wc reiniger|toiletreiniger|wc-blok|toiletblok|harpic|wc eend|wc-eend|domestos/,'Schoonmaak','Wc-reiniger'],
+ [/ontkalk|kalkreiniger|descal|antikalk|anti-calcaire/,'Schoonmaak','Ontkalker'],[/glasreiniger|ruitenreiniger|glass cleaner|lave-vitre/,'Schoonmaak','Glas en ramen'],[/vloerreiniger|dweil|vloerzeep|groene zeep/,'Schoonmaak','Vloer'],
+ [/allesreiniger|all purpose cleaner|multi.?reiniger|ontvetter|ajax|mr\.? ?proper|dettol|bleekwater|bleekmiddel|javel|chloor|nettoyant/,'Schoonmaak','Allesreiniger'],[/schoonmaakdoek|reinigingsdoek|microvezel/,'Schoonmaak','Schoonmaakdoekjes'],
+ [/keukenrol|keukenpapier|paper towel|essuie-tout/,'Papier, folie en zakken','Keukenrol'],[/vuilniszak|afvalzak|pmd-zak|pmd zak|restafvalzak|bin bag|sac poubelle/,'Papier, folie en zakken','Vuilniszakken'],
+ [/aluminiumfolie|alufolie|huishoudfolie|vershoudfolie|cling film/,'Papier, folie en zakken','Aluminium- en huishoudfolie'],[/diepvrieszak|boterhamzak|ritszak|zip.?zak|congelation/,'Papier, folie en zakken','Diepvries- en boterhamzakjes'],
+ [/bakpapier|ovenpapier|papier cuisson|baking paper/,'Papier, folie en zakken','Bakpapier'],[/batterij|battery|pile alcaline/,'Overig huishouden','Batterijen'],[/ledlamp|gloeilamp|led lamp|spaarlamp|ampoule/,'Overig huishouden','Lampen'],
+ [/kaars|lucifer|waxinelicht|theelicht/,'Overig huishouden','Kaarsen en lucifers'],[/insect|muggen|mierenlokdoos|mierenpoeder|vliegenvanger|ongedierte|muizenval|insecticide/,'Overig huishouden','Insecten en ongedierte']];
+const HOUSE_TAGS=/laundry|detergent|dishwash|cleaning|cleaner|household|lessive|nettoyant|entretien|menage|wasmiddel|schoonmaak/;
+function classifyHouse(name,tags){const t=norm((name||'')+' '+(tags||[]).join(' '));for(const r of HOUSE_RULES)if(r[0].test(t))return {category:r[1],sub:r[2]};return null}
+function domainLabel(d){const x=DOMAINS.find(z=>z[0]===d);return x?x[1]:''}
+function domainIcon(d){const x=DOMAINS.find(z=>z[0]===d);return x?x[2]:''}
 const LOCATION_TYPES=[['kast','Kast'],['rek','Rek'],['lade','Lade'],['koelkast','Koelkast'],['diepvries','Diepvriezer'],['andere','Andere']];
 const DEFAULT_CATEGORIES=[
  {id:'cat-droog',name:'Droge voeding',aisle:'Droge voeding',subs:['Pasta','Rijst','Noedels','Bloem en meel','Suiker en zoetstoffen','Granen en ontbijtproducten','Peulvruchten','Noten en zaden','Brood en beschuiten']},
@@ -509,7 +559,7 @@ const DEFAULT_CATEGORIES=[
  {id:'cat-diepvries',name:'Diepvries',aisle:'Diepvries',subs:['Vlees en gevogelte','Vis','Brood en deegwaren','Groenten','Fruit','Kant-en-klare maaltijden','Restjes en zelfbereide gerechten','IJs en desserts']},
  {id:'cat-overig',name:'Overige',aisle:'Overige',subs:['Snoep en chocolade','Koekjes','Chips en snacks','Dranken','Bakproducten','Overige voedingsmiddelen']}];
 const SUB_AISLE={'Brood en beschuiten':'Brood & bakkerij','Verse kruiden':'Groenten & fruit','Diepvriesgroenten':'Diepvries','Diepvriesfruit':'Diepvries','Snoep en chocolade':'Snoep & snacks','Koekjes':'Snoep & snacks','Chips en snacks':'Snoep & snacks','Dranken':'Dranken','Bakproducten':'Bakken','Vleeswaren':'Vlees & vis','Eieren':'Zuivel & koeling'};
-const DEFAULT_AISLES=['Groenten & fruit','Brood & bakkerij','Vlees & vis','Zuivel & koeling','Droge voeding','Conserven & sauzen','Kruiden & specerijen','Bakken','Snoep & snacks','Dranken','Diepvries','Overige'];
+const DEFAULT_AISLES=['Groenten & fruit','Brood & bakkerij','Vlees & vis','Zuivel & koeling','Droge voeding','Conserven & sauzen','Kruiden & specerijen','Bakken','Snoep & snacks','Dranken','Diepvries','Overige','Drogisterij','Apotheek','Huishouden'];
 const DEFAULT_SETTINGS={
   household:'Mijn keuken',users:['Ik'],servings:2,
   thresholds:{red:3,orange:7,yellow:14},useFirstDays:14,
@@ -594,6 +644,9 @@ function classify(name,tags){const t=(tags||[]).join(' ').toLowerCase();
   if(t)for(const r of TAG_RULES)if(r[0].test(t))return {category:r[1],sub:r[2]};
   const n=norm(name);if(n)for(const r of NAME_RULES)if(r[0].test(n))return {category:r[1],sub:r[2]};return null}
 function suggestLocation(cat,sub){
+  if(cat==='Was'||cat==='Papier, folie en zakken'||cat==='Overig huishouden')return 'loc-berging';if(cat==='Vaat'||cat==='Schoonmaak')return 'loc-ondergootsteen';
+  if(cat==='Lichaamsverzorging')return 'loc-badkamerkast';if(cat==='Hygiëne en papier')return 'loc-lavabo';
+  if(cat==='Geneesmiddelen'||cat==='Vitaminen en supplementen')return 'loc-medicijnkast';if(cat==='EHBO')return 'loc-ehbo';
   if(cat==='Diepvries'||sub==='Diepvriesgroenten'||sub==='Diepvriesfruit')return 'loc-dv-keuken';
   if(cat==='Koeling'||cat==='Vlees, vis en gevogelte'||sub==='Verse kruiden'||sub==="Kruidenpasta's")return 'loc-koelkast';
   if(cat==='Kruiden en specerijen')return sub==='Kruidenmixen'?'loc-kruidenrek':'loc-kruidenkast';
@@ -614,6 +667,27 @@ function mapOFF(code,json){if(!json||json.status!==1||!json.product)return null;
   const cls=classify(name,p.categories_tags)||{category:'',sub:''};
   return {barcode:code,name,brand,qty:qty?qty.qty:1,unit:qty?qty.unit:'stuks',quantityLabel:p.quantity||'',photo:p.image_front_small_url||p.image_small_url||p.image_front_url||'',category:cls.category,sub:cls.sub,source:'Open Food Facts'}}
 
+/* ---------- Bijsluiter: indeling in de vaste rubrieken 1-6 (gedeeld met het Google-script) ---------- */
+function splitLeaflet(text){const lines=String(text||'').replace(/\r/g,'').split('\n');const marked=lines.some(l=>/^##\s*[1-6]\b/.test(l));const subMarked=lines.some(l=>/^###\s/.test(l));
+  const secs=[];let cur={nr:0,titel:'',lines:[]};secs.push(cur);let last=0;
+  for(const raw of lines){const l=raw.trim();let m=marked?l.match(/^##\s*([1-6])[.)]?\s*(.*)$/):null;
+    if(!marked){const m2=l.match(/^(?:##\s*)?([1-6])[.)]\s+(\S.{2,160})$/);if(m2&&(Number(m2[1])===last+1||Number(m2[1])===1))m=m2}
+    if(m){last=Number(m[1]);cur={nr:last,titel:m[2].replace(/^#+\s*/,'').trim(),lines:[]};secs.push(cur);continue}cur.lines.push(raw.replace(/\s+$/,''))}
+  const out=[];secs.forEach(x=>{const tekst=x.lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();if(!tekst&&x.nr===0)return;
+    const subs=[];let sc=null;x.lines.forEach(raw=>{const l=raw.trim();const hm=l.match(/^###\s*(.+)$/);const isH=hm||(!subMarked&&l.length<=140&&/\?$/.test(l)&&!/^[•\-]/.test(l));
+      if(isH){sc={titel:(hm?hm[1]:l).trim(),lines:[]};subs.push(sc)}else if(sc)sc.lines.push(raw)});
+    const o={nr:x.nr,titel:x.titel,tekst,subs:subs.map(z=>({titel:z.titel,tekst:z.lines.join('\n').trim()}))};
+    const prev=out.find(y=>y.nr===o.nr&&o.nr>0);if(prev){if(o.tekst.length>prev.tekst.length)Object.assign(prev,o)}else out.push(o)});
+  return out.sort((a,b)=>a.nr-b.nr)}
+const LEAFLET_QUICK=[['inname','Hoe innemen?',3,null],['vergeten','Vergeten in te nemen?',3,/vergeten/],['teveel','Te veel ingenomen?',3,/te veel|teveel|overdos/],['stoppen','Stoppen?',3,/stopt|stoppen/],
+  ['niet','Wanneer niet gebruiken?',2,/niet (in)?(nemen|gebruiken|toedienen|aanbrengen)|mag u .{0,40}niet/],['voorzichtig','Voorzichtig zijn?',2,/voorzichtig/],['andere','Andere geneesmiddelen?',2,/andere geneesmiddelen|wisselwerking/],
+  ['eten','Eten, drinken en alcohol?',2,/voedsel|eten|drinken|alcohol/],['zwanger','Zwanger of borstvoeding?',2,/zwanger|borstvoeding/],['rijden','Autorijden?',2,/rijvaardigheid|machines|autorijden/],
+  ['bijwerkingen','Bijwerkingen?',4,null],['bewaren','Bewaren?',5,null],['waarvoor','Waarvoor dient het?',1,null],['inhoud','Wat zit erin?',6,null]];
+function leafletQuick(secs,key){const q=LEAFLET_QUICK.find(x=>x[0]===key);if(!q)return null;const sec=(secs||[]).find(x=>x.nr===q[2]);if(!sec)return null;
+  if(!q[3])return {key,vraag:q[1],nr:sec.nr,titel:sec.nr+'. '+sec.titel,tekst:sec.tekst,exact:true};
+  const sub=sec.subs.filter(z=>q[3].test(norm(z.titel)));if(sub.length)return {key,vraag:q[1],nr:sec.nr,titel:sec.nr+'. '+sec.titel,tekst:sub.map(z=>'### '+z.titel+'\n'+z.tekst).join('\n\n'),exact:true};
+  let paras=sec.tekst.split(/\n\s*\n/).filter(x=>q[3].test(norm(x)));
+  if(paras.length===1&&paras[0].length>1200){const ls=paras[0].split('\n');const pick=[];ls.forEach((l,i)=>{if(q[3].test(norm(l)))pick.push(ls.slice(i,i+6).join('\n'))});if(pick.length)paras=pick}return paras.length?{key,vraag:q[1],nr:sec.nr,titel:sec.nr+'. '+sec.titel,tekst:paras.slice(0,6).join('\n\n'),exact:false}:{key,vraag:q[1],nr:sec.nr,titel:sec.nr+'. '+sec.titel,tekst:'',exact:false}}
 /* ---------- OCR-tekst -> velden ---------- */
 const MONTHS={jan:1,januari:1,january:1,janv:1,feb:2,februari:2,february:2,fev:2,fevr:2,mrt:3,maa:3,maart:3,mar:3,march:3,mars:3,apr:4,april:4,avr:4,avril:4,mei:5,may:5,mai:5,jun:6,juni:6,june:6,juin:6,jul:7,juli:7,july:7,juil:7,juillet:7,aug:8,augustus:8,august:8,aou:8,aout:8,sep:9,sept:9,september:9,okt:10,oktober:10,oct:10,october:10,octobre:10,nov:11,november:11,novembre:11,dec:12,december:12,decembre:12};
 const KNOWN_BRANDS=['Boni','Everyday','Barilla','Panzani','Lutosa','Iglo','Knorr','Delhaize','Colruyt','Albert Heijn','AH','Jumbo','Carrefour','Aldi','Lidl','Inza','Devos Lemmens','Calvé','Heinz','Lotus','Côte d\'Or','Milka','Danone','Alpro','Inex','Campina','Président','Bonduelle','Zwan','Dr. Oetker','Uncle Ben\'s','Lassie','Tiense Suiker','Vandemoortele','Solo','Ola','Nestlé','Kellogg\'s','Quaker','Lay\'s','Pringles','Spa','Chaudfontaine','Materne','Bonne Maman','Mora','Grand Italia','Buitoni','Mutti','Ducros','Verstegen','Santa Maria','Oxo','Maggi','Liebig','Lima','Joyvalle','Hellmann\'s','Herta','Marie'];
@@ -733,11 +807,25 @@ function createModel(adapter,hooks){hooks=hooks||{};
   const state=()=>(S.meta.state&&S.meta.state.value)||{};
   function saveState(patch){put('meta',{id:'state',value:Object.assign({},state(),patch)})}
   const isInitialized=()=>!!S.meta.schema;
-  function initDefaults(){if(S.meta.schema)return;tx(()=>{DEFAULT_LOCATIONS.forEach(l=>{if(!S.locations[l.id])put('locations',Object.assign({},l))});if(!S.meta.categories)saveCategories(clone(DEFAULT_CATEGORIES));put('meta',{id:'schema',v:1,createdAt:nowISO()})})}
+  function initDefaults(){if(S.meta.schema){ensureDomains();return}tx(()=>{DEFAULT_LOCATIONS.forEach(l=>{if(!S.locations[l.id])put('locations',Object.assign({},l))});if(!S.meta.categories)saveCategories(clone(DEFAULT_CATEGORIES));put('meta',{id:'schema',v:1,createdAt:nowISO()})});ensureDomains()}
   const setUser=u=>{user=u||'Ik'},getUser=()=>user;
-  const locations=()=>Object.values(S.locations).sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name));
-  const products=()=>Object.values(S.products).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
-  const lots=()=>Object.values(S.lots).filter(l=>l.qty>0);
+  /* Weergavefilter: alleen actief terwijl een scherm getekend wordt (zie render). Rekenlogica, meldingen en synchronisatie zien altijd alles. */
+  let vdom='';function viewDomain(d){const o=vdom;vdom=d||'';return o}const curView=()=>vdom;
+  const locDomain=l=>(l&&l.domain)||'keuken';
+  function catDomain(name){if(!name)return '';const c=categories().find(x=>x.name===name);return c?(c.domain||'keuken'):''}
+  function productDomain(p){if(!p)return 'keuken';if(p.domain)return p.domain;const c=catDomain(p.category);if(c)return c;const l=Object.values(S.lots).find(x=>x.productId===p.id&&S.locations[x.locationId]);return l?locDomain(S.locations[l.locationId]):'keuken'}
+  const inView=p=>!vdom||productDomain(p)===vdom;
+  const locations=()=>Object.values(S.locations).filter(l=>!vdom||locDomain(l)===vdom).sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name));
+  const products=()=>Object.values(S.products).filter(inView).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
+  const lots=()=>Object.values(S.lots).filter(l=>l.qty>0&&(!vdom||inView(S.products[l.productId])));
+  function categoriesFor(d){return categories().filter(c=>!d||(c.domain||'keuken')===d)}
+  /* Voegt de bewaarplaatsen, categorieën en rayons van de extra voorraden één keer toe (vaste id's: veilig op meerdere toestellen).
+     v1 = Badkamer en Medicijnkast, v2 = Huishouden. Alleen wat sinds de bewaarde versie nieuw is: een bewust verwijderde bewaarplaats komt niet terug. */
+  function ensureDomains(){const v=(S.meta.domains&&S.meta.domains.v)||0;if(v>=DOMAINS_V)return false;const nw=x=>(x.since||1)>v,strip=x=>{const y=Object.assign({},x);delete y.since;return y};
+    tx(()=>{DOMAIN_LOCATIONS.filter(nw).forEach(l=>{if(!S.locations[l.id])put('locations',strip(l))});
+      const cats=categories();let ch=false;DOMAIN_CATEGORIES.filter(nw).forEach(c=>{if(!cats.some(x=>x.id===c.id||x.name===c.name)){cats.push(strip(clone(c)));ch=true}});if(ch||!S.meta.categories)saveCategories(cats);
+      const st=(S.meta.settings&&S.meta.settings.value)||{};if(Array.isArray(st.aisles)){const a=st.aisles.slice();DOMAIN_AISLES.forEach(x=>{if(!a.includes(x))a.push(x)});if(a.length!==st.aisles.length)put('meta',{id:'settings',value:Object.assign({},st,{aisles:a})})}
+      put('meta',{id:'domains',v:DOMAINS_V,at:nowISO()})});return true}
   const lotsOf=pid=>lots().filter(l=>l.productId===pid);
   const lotsIn=loc=>lots().filter(l=>l.locationId===loc);
   const locName=id=>(S.locations[id]&&S.locations[id].name)||'Onbekende locatie';
@@ -780,9 +868,47 @@ function createModel(adapter,hooks){hooks=hooks||{};
     return {members:ms,lead,total:rnd(total),min:Number(lead.minStock)||0,unit:lead.unit,other,reorder:ms.some(m=>m.reorderWhenEmpty!==false),multi:true}}
   function kindSuggest(name){const n=norm(name);if(!n)return '';const words=n.split(/[^a-z0-9]+/).filter(Boolean);let best='';
     new Set(products().map(kindOf)).forEach(c=>{const k=norm(c);if(!k||k===n||k.length<3)return;const hit=k.includes(' ')?n.includes(k):words.some(w=>w===k||(k.length>=4&&w.endsWith(k)));if(hit&&k.length>norm(best).length)best=c});return best}
+  /* (medicijnkast: zie hieronder) */
+  /* ---------- Medicijnkast: gezinsleden, innames en controles zonder AI ---------- */
+  const members=()=>(Array.isArray(settings().members)?settings().members:[]).filter(m=>m&&m.id);
+  const memberById=id=>members().find(m=>m.id===id)||null;
+  function saveMember(m){const list=members().slice();if(!m.id)m.id=uid('mem');m.name=String(m.name||'').trim();if(!m.name)throw new Error('Geef een naam.');
+    const i=list.findIndex(x=>x.id===m.id);if(i>=0)list[i]=Object.assign({},list[i],m);else list.push(m);saveSettings({members:list});return m}
+  function deleteMember(id){saveSettings({members:members().filter(m=>m.id!==id)})}
+  function memberAge(m,ref){if(!m)return null;ref=ref||todayStr();if(m.birth&&/^\d{4}-\d{2}-\d{2}$/.test(m.birth)){const b=m.birth;let y=Number(ref.slice(0,4))-Number(b.slice(0,4));if(ref.slice(5)<b.slice(5))y--;let mo=(Number(ref.slice(0,4))-Number(b.slice(0,4)))*12+Number(ref.slice(5,7))-Number(b.slice(5,7));if(Number(ref.slice(8))<Number(b.slice(8)))mo--;return {years:Math.max(0,y),months:Math.max(0,mo)}}
+    const a=Number(m.age);return a>=0&&m.age!==''&&m.age!=null?{years:Math.floor(a),months:Math.floor(a*12)}:null}
+  const isMed=p=>productDomain(p)==='medicijnen';
+  const medProducts=()=>Object.values(S.products).filter(isMed).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
+  function medSubstances(p){const m=p&&p.med;return m&&Array.isArray(m.stoffen)?m.stoffen.map(x=>String(x&&x.naam||x||'').trim()).filter(Boolean):[]}
+  const intakes=()=>Object.values(S.intakes||{}).sort((a,b)=>a.ts<b.ts?1:-1);
+  function intakesFor(memberId,sinceMs){const t0=Date.now()-(sinceMs||0);return intakes().filter(x=>x.memberId===memberId&&(!sinceMs||Date.parse(x.ts)>=t0))}
+  function addIntake(d){const p=S.products[d.productId];const m=memberById(d.memberId);if(!p)throw new Error('Kies een geneesmiddel.');if(!m)throw new Error('Kies voor wie.');
+    const units=Number(d.units);const x={id:uid('in'),memberId:m.id,productId:p.id,name:p.name,stoffen:medSubstances(p),units:units>0?rnd(units):1,dose:String(d.dose||'').slice(0,80),ts:d.ts||nowISO(),verdict:String(d.verdict||'').slice(0,12),wachtUren:Number(d.wachtUren)>0?Number(d.wachtUren):null,maxPerDag:Number(d.maxPerDag)>0?Number(d.maxPerDag):null,user,note:String(d.note||'').slice(0,200)};
+    tx(()=>{put('intakes',x);if(d.lotId&&S.lots[d.lotId]&&d.takeQty>0)consume(d.lotId,Number(d.takeQty));hist('inname',null,null,{productId:p.id,name:p.name,note:'Inname voor '+m.name+(x.dose?' · '+x.dose:'')})});return x}
+  function deleteIntake(id){tx(()=>del('intakes',id))}
+  const hoursAgo=ts=>(Date.now()-Date.parse(ts))/3600000;
+  /* Controles die altijd gelden, ook zonder AI. limits = {maxPerDag, wachtUren} uit het laatste advies (optioneel). */
+  function medChecks(memberId,productId,limits){const p=S.products[productId],m=memberById(memberId);const out=[];if(!p||!m)return out;limits=limits||{};
+    const ls=fifoLots(productId);const lot=ls.find(l=>suitable(l))||ls[0];
+    if(!ls.length)out.push({sev:1,txt:'Niet meer in voorraad.'});
+    else{const e=lotExpiry(lot);if(e.level==='expired')out.push({sev:2,txt:e.type==='OPEN'?'De houdbaarheid na opening is verstreken ('+fmtDate(e.date)+'). Niet meer gebruiken.':'Vervallen op '+fmtDate(e.date)+'. Niet meer gebruiken; breng het terug naar de apotheek.'});else if(e.days!=null&&e.days<=7)out.push({sev:1,txt:'Vervalt binnenkort: '+fmtDate(e.date)+'.'})}
+    const subs=medSubstances(p).map(norm);const words=t=>norm(t).split(/[,;\n]+|\s+en\s+/).map(x=>x.trim()).filter(x=>x.length>=3);
+    const al=words(m.allergies||'');const hay=[norm(p.name)].concat(subs).join(' | ');const hit=al.filter(a=>hay.includes(a)||subs.some(s=>s&&a.includes(s)));
+    if(hit.length)out.push({sev:2,txt:'Allergie: '+m.name+' is allergisch voor '+hit.join(', ')+'. Niet innemen zonder je arts of apotheker.'});
+    const day=intakesFor(memberId,24*3600000);const same=day.filter(x=>x.productId===productId);
+    const other=day.filter(x=>x.productId!==productId&&(x.stoffen||[]).some(s=>subs.includes(norm(s))));
+    if(other.length)out.push({sev:2,txt:'Zelfde werkzame stof al genomen in de laatste 24 uur: '+Array.from(new Set(other.map(x=>x.name))).join(', ')+'. Tel de dosissen samen.'});
+    if(same.length){const last=same[0];if(!(limits.wachtUren>0)&&last.wachtUren>0)limits=Object.assign({},limits,{wachtUren:last.wachtUren});if(!(limits.maxPerDag>0)&&last.maxPerDag>0)limits=Object.assign({},limits,{maxPerDag:last.maxPerDag});const h=hoursAgo(last.ts);const tot=rnd(same.reduce((a,x)=>a+(Number(x.units)||1),0));
+      out.push({sev:0,txt:'Laatste inname '+(h<1?Math.max(1,Math.round(h*60))+' min':fmtNum(Math.round(h*10)/10)+' uur')+' geleden · '+fmtNum(tot)+' in de laatste 24 uur.',last:last.ts,count24:tot});
+      if(limits.wachtUren>0&&h<limits.wachtUren){const nx=new Date(Date.parse(last.ts)+limits.wachtUren*3600000);out.push({sev:2,txt:'Nog niet: wacht minstens '+limits.wachtUren+' uur tussen twee innames. Volgende inname vanaf '+pad(nx.getHours())+':'+pad(nx.getMinutes())+(todayStr(nx)!==todayStr()?' ('+fmtDate(todayStr(nx))+')':'')+'.',next:nx.toISOString()})}
+      if(limits.maxPerDag>0&&tot>=limits.maxPerDag)out.push({sev:2,txt:'Maximum voor 24 uur bereikt ('+fmtNum(limits.maxPerDag)+').'})}
+    return out.sort((a,b)=>b.sev-a.sev)}
+  /* Zoekt in je eigen kast wat volgens de bijsluiter helpt tegen een klacht. */
+  function medFind(q,extra){const ws=norm(q).split(/[^a-z0-9]+/).filter(w=>w.length>=3);if(!ws.length)return [];
+    return medProducts().map(p=>{const m=p.med||{};const hay=norm([p.name,p.sub,(m.indicaties||[]).join(' '),medSubstances(p).join(' '),(extra&&extra(p))||''].join(' '));const sc=ws.filter(w=>hay.includes(w)||(w.length>=5&&hay.includes(w.slice(0,w.length-1)))).length;return {p,sc,stock:productTotal(p.id)>0}}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc||(b.stock-a.stock))}
   /* ---------- Houdbaar na opening: bron 'etiket' | 'geschat' (Gemini) | 'zelf' | 'nvt' (niet van toepassing). Leeg = nog onbekend. ---------- */
   function openShelfSrc(p){if(!p)return '';if(p.openShelfSrc)return p.openShelfSrc;return Number(p.openShelfDays)>0?'zelf':''}
-  function openShelfTodo(){return products().filter(p=>!Number(p.openShelfDays)&&!openShelfSrc(p))}
+  function openShelfTodo(){return products().filter(p=>!Number(p.openShelfDays)&&!openShelfSrc(p)&&!isMed(p)&&productDomain(p)!=='huishouden')}
   function openShelfStats(){const o={etiket:0,geschat:0,zelf:0,nvt:0,todo:0};products().forEach(p=>{const s=openShelfSrc(p);if(s)o[s]=(o[s]||0)+1;else o.todo++});return o}
   /* items: [{id, days, nvt, src:'geschat'|'etiket', store, conf, note}]. Overschrijft nooit een eigen waarde; een etiketwaarde gaat voor op een schatting. */
   function applyOpenShelf(items){let n=0;tx(()=>{(items||[]).forEach(x=>{const p=x&&S.products[x.id];if(!p)return;const cur=openShelfSrc(p);const src=x.src==='etiket'?'etiket':'geschat';
@@ -914,6 +1040,19 @@ function createModel(adapter,hooks){hooks=hooks||{};
   const recipeById=id=>BUILTIN_RECIPES.find(r=>r.id===id)||S.recipes[id]||null;
   function saveRecipe(r){if(!r.name)throw new Error('Geef het recept een naam.');if(!r.ing||!r.ing.length)throw new Error('Voeg minstens één ingrediënt toe.');const n=Object.assign({servings:2,meals:['avond'],tags:[],emoji:'🍽️',time:30,diff:'Makkelijk',steps:[],custom:true},r);if(!n.id)n.id=uid('rc');put('recipes',n);return n}
   const deleteRecipe=id=>del('recipes',id);
+  /* Recepten in bulk: eigen recepten worden verwijderd, ingebouwde verborgen (terug te zetten). Toekomstige, niet-bereide planningen van verwijderde recepten gaan mee.
+     Geeft alles terug wat nodig is om het ongedaan te maken. */
+  function planUses(ids){const set=new Set(ids),today=todayStr();return Object.values(S.plan).filter(e=>set.has(e.recipeId)&&!e.cooked&&e.date>=today)}
+  function removeRecipes(ids){ids=[...new Set(ids||[])];const own=ids.filter(id=>S.recipes[id]),built=ids.filter(id=>!S.recipes[id]&&BUILTIN_RECIPES.some(r=>r.id===id));
+    const undo={recipes:own.map(id=>clone(S.recipes[id])),plan:planUses(own).map(clone),hidden:clone(state().hiddenRecipes||{})};
+    tx(()=>{undo.plan.forEach(e=>del('plan',e.id));own.forEach(id=>del('recipes',id));if(built.length){const h=Object.assign({},state().hiddenRecipes||{});built.forEach(id=>h[id]=true);saveState({hiddenRecipes:h})}});
+    return {deleted:own.length,hidden:built.length,undo}}
+  function restoreRecipes(u){if(!u)return;tx(()=>{u.recipes.forEach(r=>{if(!S.recipes[r.id])put('recipes',r)});u.plan.forEach(e=>{if(!S.plan[e.id])put('plan',e)});saveState({hiddenRecipes:u.hidden})})}
+  /* Volgorde van de voorraden bovenaan (gedeeld via de instellingen). Onbekende of nieuwe voorraden komen achteraan in de standaardvolgorde. */
+  function domainOrder(){const want=Array.isArray(settings().domOrder)?settings().domOrder:[];const ids=DOMAINS.map(d=>d[0]);const o=want.filter((x,i)=>ids.includes(x)&&want.indexOf(x)===i);ids.forEach(x=>{if(!o.includes(x))o.push(x)});return o}
+  const orderedDomains=()=>domainOrder().map(id=>DOMAINS.find(d=>d[0]===id));
+  function moveDomain(id,step){const o=domainOrder();const i=o.indexOf(id),j=i+step;if(i<0||j<0||j>=o.length)return false;[o[i],o[j]]=[o[j],o[i]];saveSettings({domOrder:o});return true}
+  const resetDomainOrder=()=>saveSettings({domOrder:DOMAINS.map(d=>d[0])});
   function ingMatches(ing,p){const pn=norm(p.name+(p.kind?' '+p.kind:''));if(ing.x&&ing.x.some(x=>pn.includes(norm(x))))return false;
     if(ing.sub&&[].concat(ing.sub).includes(p.sub))return true;const words=pn.split(/[^a-z0-9]+/).filter(Boolean);
     return (ing.k&&ing.k.length?ing.k:[ing.n]).some(kw0=>{const kw=norm(kw0);if(!kw)return false;if(kw.startsWith('='))return words.includes(kw.slice(1));if(kw.includes(' '))return pn.includes(kw);
@@ -981,7 +1120,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
     return {products:pids.size,lots:ls.length,totalLabel:parts.join(' · ')||'leeg',low,soon,expired:exp,nodate,warnings:soon+exp+low}}
   function report(days){days=days||30;const from=addDays(todayStr(),-days);const hs=Object.values(S.history).filter(h=>h.date>=from);const c={};hs.forEach(h=>{c[h.action]=(c[h.action]||0)+1});return {counts:c,waste:hs.filter(h=>h.action==='weggegooid'),total:hs.length}}
   function inventoryRows(){return lots().map(l=>{const p=S.products[l.productId]||{};const e=lotExpiry(l);return {'Product':p.name||'','Merk':p.brand||'','Categorie':p.category||'','Subcategorie':p.sub||'','Opslaglocatie':locName(l.locationId),'Hoeveelheid':l.qty,'Eenheid':l.unit,'Aankoopdatum':l.purchaseDate||'onbekend','Datumtype':l.dateType||'','Vervaldatum':l.expiryDate||'','Effectieve datum':e.date||'','Dagen resterend':e.days==null?'':e.days,'Invriesdatum':l.freezeDate||'','Geopend':l.opened?'ja':'nee','Geopend op':l.openedDate||'','Minimumvoorraad':p.minStock||0,'Barcode':p.barcode||'','Batch':l.batch||'','Opmerkingen':[p.notes,l.notes].filter(Boolean).join(' / ')}})}
-  function productRows(){return products().map(p=>({'Product':p.name,'Merk':p.brand||'','Soort':kindOf(p),'Alleen dit merk':p.brandRequired?'ja':'nee','Categorie':p.category||'','Subcategorie':p.sub||'','Totaal in huis':productTotal(p.id),'Eenheid':p.unit,'Minimumvoorraad':p.minStock||0,'Status':productLevel(p.id)||'ok','Partijen':lotsOf(p.id).length,'Houdbaar na opening (dagen)':Number(p.openShelfDays)||'','Bron na opening':{etiket:'etiket',geschat:'geschat',zelf:'zelf',nvt:'n.v.t.'}[openShelfSrc(p)]||'','Barcode':p.barcode||''}))}
+  function productRows(){return products().map(p=>({'Product':p.name,'Merk':p.brand||'','Voorraad':domainLabel(productDomain(p)),'Soort':kindOf(p),'Alleen dit merk':p.brandRequired?'ja':'nee','Categorie':p.category||'','Subcategorie':p.sub||'','Totaal in huis':productTotal(p.id),'Eenheid':p.unit,'Minimumvoorraad':p.minStock||0,'Status':productLevel(p.id)||'ok','Partijen':lotsOf(p.id).length,'Houdbaar na opening (dagen)':Number(p.openShelfDays)||'','Bron na opening':{etiket:'etiket',geschat:'geschat',zelf:'zelf',nvt:'n.v.t.'}[openShelfSrc(p)]||'','Barcode':p.barcode||''}))}
   function shoppingRows(){return shopSorted().map(s=>({'Product':s.name,'Merk':shopBrand(s),'Hoeveelheid':s.qty,'Eenheid':s.unit,'Verpakking':s.pack||'','Categorie':s.category||'','Gang':shopAisle(s),'Gekocht':s.checked?'ja':'nee','Reden':s.auto||'manueel','Notitie':s.note||''}))}
   function historyRows(){return Object.values(S.history).sort((a,b)=>a.ts<b.ts?1:-1).map(h=>({'Datum':h.ts.slice(0,16).replace('T',' '),'Handeling':h.action,'Product':h.name,'Hoeveelheid':h.qty,'Eenheid':h.unit,'Van':h.from?locName(h.from):'','Naar/locatie':h.to?locName(h.to):'','Gebruiker':h.user||'','Notitie':h.note||''}))}
   const backup=()=>({app:'slim-voorraadbeheer',version:1,exportedAt:nowISO(),data:clone(S)});
@@ -991,7 +1130,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
   return {S,listeners,tx,load,applyRemote,settings,saveSettings,household,effServings,categories,saveCategories,state,saveState,isInitialized,initDefaults,setUser,getUser,
     locations,products,lots,lotsOf,lotsIn,locName,isFreezer,catAisle,shopAisle,shopAisleInfo,shopGroups,shopSorted,levelFor,lotExpiry,suitable,fifoCmp,fifoLots,productTotal,productLevel,expiryWarning,hist,
     findProductByBarcode,findProductByName,saveProduct,deleteProduct,addLot,updateLot,consume,useUp,discard,topUpLot,moveLot,openLot,deleteLot,openPackAsPieces,piecesPerPack,countLot,correctUse,canCorrect,markChecked,allocateFIFO,consumeFIFO,
-    checkMinStock,openShoppingFor,addShopping,kindOf,kindLabel,kindKey,kindProducts,kindMembers,kindState,kindSuggest,openShelfSrc,openShelfTodo,openShelfStats,applyOpenShelf,shopBrand,shopProduct,shopItemFor,updateShopping,removeShopping,transferPurchased,saveLocation,deleteLocation,allRecipes,recipeById,saveRecipe,deleteRecipe,ingMatches,evalRecipe,passesFilter,suggestRecipes,cookRecipe,
+    removeRecipes,restoreRecipes,planUses,domainOrder,orderedDomains,moveDomain,resetDomainOrder,checkMinStock,openShoppingFor,addShopping,kindOf,kindLabel,kindKey,kindProducts,kindMembers,kindState,kindSuggest,viewDomain,curView,locDomain,catDomain,productDomain,categoriesFor,ensureDomains,members,memberById,saveMember,deleteMember,memberAge,isMed,medProducts,medSubstances,intakes,intakesFor,addIntake,deleteIntake,medChecks,medFind,openShelfSrc,openShelfTodo,openShelfStats,applyOpenShelf,shopBrand,shopProduct,shopItemFor,updateShopping,removeShopping,transferPurchased,saveLocation,deleteLocation,allRecipes,recipeById,saveRecipe,deleteRecipe,ingMatches,evalRecipe,passesFilter,suggestRecipes,cookRecipe,
     MEALS,planKey,weekDates,setPlan,clearPlan,movePlan,evalWeek,weekMissing,addWeekMissing,generateWeek,buildNotifications,useFirst,lowStock,locStats,report,inventoryRows,productRows,shoppingRows,historyRows,backup,restore,wipe,put,del}}
 
 /* ---------- CSV / XLSX ---------- */
@@ -1032,7 +1171,7 @@ function parseGs1Elements(s){s=String(s).replace(/^\](?:C1|e0|d2|Q3|J1)/,'');con
   while(i<s.length){if(s[i]===GS){i++;continue}const two=s.slice(i,i+2);if(!/^\d\d$/.test(two))return null;
     if(GS1_FIXED[two]){const v=s.slice(i+2,i+2+GS1_FIXED[two]);if(v.length<GS1_FIXED[two]||!/^\d+$/.test(v))return null;ai[two]=v;i+=2+GS1_FIXED[two];continue}
     if(/^3[1-6]\d\d$/.test(s.slice(i,i+4))){const v=s.slice(i+4,i+10);if(!/^\d{6}$/.test(v))return null;ai[s.slice(i,i+4)]=v;i+=10;continue}
-    const k=['10','21','22','30','37','240','241','250','251','400','410','420','8020'].sort((a,b)=>b.length-a.length).find(x=>s.startsWith(x,i));if(!k)return null;
+    const k=['10','21','22','30','37','240','241','250','251','400','410','420','710','711','712','713','714','715','716','8020'].sort((a,b)=>b.length-a.length).find(x=>s.startsWith(x,i));if(!k)return null;
     let j=s.indexOf(GS,i+k.length);if(j<0)j=s.length;ai[k]=s.slice(i+k.length,j);i=j}
   return ai['01']||ai['02']?ai:null}
 function parseDigitalLink(raw){const m=String(raw).match(/^https?:\/\/[^/?#]+([^?#]*)(?:\?([^#]*))?/i);if(!m)return null;
@@ -1196,7 +1335,7 @@ function loadScript(src){return new Promise((res,rej)=>{if(document.querySelecto
 function resizeImage(file,max,q){return new Promise((res,rej)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{const sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res({dataUrl:c.toDataURL('image/jpeg',q||0.72),canvas:c,img})};img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('Afbeelding kon niet gelezen worden.'))};img.src=url})}
 
 /* ---------- Router ---------- */
-const VIEWS=[['dashboard','Dashboard','🏠','home'],['voorraad','Mijn voorraad','📦','inventory_2'],['opslag','Opslagplaatsen','🗄️','shelves'],['scanner','Scanner','📷','barcode_scanner'],['vervaldata','Vervaldatums','⏳','hourglass_top'],['boodschappen','Boodschappenlijst','🛒','shopping_cart'],['recepten','Recepten & weekmenu','🍳','restaurant_menu'],['gezondheid','Gezondheid','💚','favorite'],['geschiedenis','Geschiedenis','🕘','history'],['instellingen','Instellingen','⚙️','settings']];
+const VIEWS=[['dashboard','Dashboard','🏠','home'],['voorraad','Mijn voorraad','📦','inventory_2'],['opslag','Opslagplaatsen','🗄️','shelves'],['scanner','Scanner','📷','barcode_scanner'],['vervaldata','Vervaldatums','⏳','hourglass_top'],['boodschappen','Boodschappenlijst','🛒','shopping_cart'],['recepten','Recepten & weekmenu','🍳','restaurant_menu'],['gezondheid','Gezondheid','💚','favorite'],['medicijnen','Medicijnkast','💊','medication'],['geschiedenis','Geschiedenis','🕘','history'],['instellingen','Instellingen','⚙️','settings']];
 function ico(sym,emo){return '<span class="ico" aria-hidden="true"><span class="msym">'+sym+'</span><span class="emo">'+emo+'</span></span>'}
 const UI={view:'dashboard',params:{},inv:{q:'',loc:'',cat:'',status:'',sort:'naam',showEmpty:false},exp:{loc:'',type:''},shop:{group:null},rec:{tab:'suggesties',f:{},meal:'',q:'',week:null},hist:{q:'',action:'',days:'30'},scan:{mode:'barcode',session:[]},settingsTab:'algemeen'};
 function parseHash(){const h=(location.hash||'').replace(/^#\/?/,'');const [v,qs]=h.split('?');const params={};if(qs)qs.split('&').forEach(kv=>{const [k,val]=kv.split('=');if(k)params[decodeURIComponent(k)]=decodeURIComponent(val||'')});return {view:VIEWS.some(x=>x[0]===v)?v:'dashboard',params}}
@@ -1239,7 +1378,7 @@ function updateSync(){const el=$('#sync');if(!el)return;let txt,warn=false;
   if(typeof Sync!=='undefined'&&Sync.cfg&&!(Store.mode==='local'&&Store.error)){const n=Sync.count();if(Sync.busy){txt='Google · synchroniseren…'}else if(Sync.err){txt='Google · '+(n?n+' wachtend · ':'')+Sync.err;warn=true}else{txt='Google · '+(n?n+' wijziging'+(n===1?'':'en')+' te versturen':'gesynchroniseerd'+(Sync.lastOk?' '+pad(Sync.lastOk.getHours())+':'+pad(Sync.lastOk.getMinutes()):''))}}
   el.className='sync'+(warn?' warn':'');el.innerHTML='<i></i><span>'+esc(txt)+'</span>';el.title=txt}
 function render(force){if(!M)return;paintChrome();if(UI.view==='scanner'&&$('#scanner-root')&&!force){Scanner.refresh();return}
-  const f=captureFocus();const fn=VIEW_RENDER[UI.view]||VIEW_RENDER.dashboard;$('#view').innerHTML='<div data-glean-id="view-'+UI.view+'">'+fn()+'</div>';restoreFocus(f);if(UI.view==='scanner')Scanner.mounted()}
+  const f=captureFocus();const fn=VIEW_RENDER[UI.view]||VIEW_RENDER.dashboard;const od=M.viewDomain(viewDom(UI.view));let body;try{body=domBar(UI.view)+fn()}finally{M.viewDomain(od)}$('#view').innerHTML='<div data-glean-id="view-'+UI.view+'">'+body+'</div>';restoreFocus(f);if(UI.view==='scanner')Scanner.mounted()}
 const VIEW_RENDER={};
 
 /* ---------- Undo ---------- */
@@ -1346,7 +1485,7 @@ A.product=d=>openProduct(d.id);
 function openProduct(pid){openModal({title:'Product',gid:'dialog-product',wide:true,live:true,body:()=>productDetail(pid),foot:()=>M.S.products[pid]?'<button type="button" class="btn danger" data-act="deleteProduct" data-id="'+esc(pid)+'">Product verwijderen</button><span class="grow"></span><button type="button" class="btn" data-act="toShop" data-id="'+esc(pid)+'">🛒 Op lijst</button><button type="button" class="btn" data-act="editProduct" data-id="'+esc(pid)+'">✎ Bewerken</button><button type="button" class="btn primary" data-act="addLotFor" data-id="'+esc(pid)+'">+ Nieuwe partij</button>':''})}
 function productDetail(pid){const p=M.S.products[pid];if(!p)return '<div class="empty">Dit product bestaat niet meer.</div>';const ls=M.fifoLots(pid);const tot=M.productTotal(pid);
   let h='<div class="row nowrap" style="align-items:flex-start">'+thumb(p).replace('class="thumb"','class="thumb" style="width:72px;height:72px;flex-basis:72px;font-size:34px"')+'<div class="grow"><div style="font-size:20px;font-weight:600;line-height:1.25">'+esc(p.name)+'</div><div class="muted">'+esc([p.brand,p.category,p.sub].filter(Boolean).join(' · '))+'</div>'+
-   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag"'+(M.openShelfSrc(p)==='geschat'?' title="Geschat door Gemini. Pas aan via Bewerken als het etiket iets anders zegt."':p.openShelfNote?' title="'+esc(p.openShelfNote)+'"':'')+'>'+p.openShelfDays+' d houdbaar na opening'+({etiket:' · etiket',geschat:' · geschat'}[M.openShelfSrc(p)]||'')+'</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'</div></div>';h+=healthSection(p);
+   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag"'+(M.openShelfSrc(p)==='geschat'?' title="Geschat door Gemini. Pas aan via Bewerken als het etiket iets anders zegt."':p.openShelfNote?' title="'+esc(p.openShelfNote)+'"':'')+'>'+p.openShelfDays+' d houdbaar na opening'+({etiket:' · etiket',geschat:' · geschat'}[M.openShelfSrc(p)]||'')+'</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'</div></div>';h+=M.isMed(p)?medSection(p):M.productDomain(p)==='keuken'?healthSection(p):'';
   h+='<div><div class="row between"><div class="eyebrow">Voorraadpartijen · FIFO-volgorde</div>'+(ls.length?'<button type="button" class="btn sm" data-act="useProduct" data-id="'+esc(pid)+'">− Gebruiken (FIFO)</button>':'')+'</div>';
   if(!ls.length)h+='<div class="empty">Geen voorraad meer. '+(M.openShoppingFor(pid)?'Staat op je boodschappenlijst.':'')+'</div>';
   else{h+='<div class="list" style="margin-top:6px">';ls.forEach((l,i)=>{const e=M.lotExpiry(l);const w=M.expiryWarning(e,M.isFreezer(l.locationId));const ok=M.suitable(l);
@@ -1594,7 +1733,7 @@ async function lookupBarcode(code,src,forceAdd){const sc=parseScan(code);if(sc.k
   if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){outScan(code,src);return}toast((sc.kind==='gs1'?'QR-code herkend (product '+code+')':'Barcode '+code+' herkend')+' — opzoeken…');const local=M.findProductByBarcode(code);
   if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);const pref=Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':src==='telefoon'?'telefoon':'barcode'},extra,qn?{info:qn}:{});
     if(!forceAdd&&M.lotsOf(local.id).length){scanChoice(local,code,src,pref);return}openConfirm(pref);return}
-  const r=await fetchOFF(code);
+  const r=await fetchProductInfo(code);
   if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:'Open Food Facts',info:'Gevonden in Open Food Facts'+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
   openConfirm(Object.assign({barcode:code,source:'barcode',unknownBarcode:true,info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Fotografeer hieronder de verpakking, dan vult de app in wat het zou kunnen zijn — of vul de gegevens zelf in. De app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
 A.eanLookup=()=>{const v=($('#ean-in').value||'').replace(/\s+/g,'');if(!v)throw new Error('Geef een barcode in.');if(/^\d+$/.test(v)&&[8,12,13,14].includes(v.length)&&!validEAN(v))toast('Let op: het controlecijfer van deze EAN klopt niet — controleer de code.','error');$('#ean-in').value='';Scanner.last={code:'',at:0};lookupBarcode(v,'manueel')};
@@ -1621,7 +1760,7 @@ async function runOCR(canvas,dataUrl){const hand=UI.scan.mode==='etiket';let cod
   const o=await ocrRead(canvas,hand);const {text,conf,err,parsed}=o;const f=parsed.fields;const thumbUrl=o.thumb;
   let pref={source:hand?'OCR etiket':'OCR verpakking',ocrText:text,ocrNotes:parsed.notes,ocrConf:conf,photoCandidate:thumbUrl,usePhoto:!hand,needsCheck:conf!=null&&conf<60};
   Object.assign(pref,{name:f.name||'',brand:f.brand||'',qty:f.qty,unit:f.unit,category:f.category||'',sub:f.sub||'',expiryDate:f.expiryDate||'',dateType:f.dateType||'',freezeDate:f.freezeDate||'',batch:f.batch||''});
-  if(code){const local=M.findProductByBarcode(code);if(local)Object.assign(pref,prefFromProduct(local),{expiryDate:pref.expiryDate,dateType:pref.dateType,freezeDate:pref.freezeDate,batch:pref.batch});else{const r=await fetchOFF(code);if(r.status==='ok'){const d=r.data;Object.assign(pref,{name:d.name||pref.name,brand:d.brand||pref.brand,category:d.category||pref.category,sub:d.sub||pref.sub,qty:d.qty||pref.qty,unit:d.unit||pref.unit,photo:d.photo})}}pref.barcode=code}
+  if(code){const local=M.findProductByBarcode(code);if(local)Object.assign(pref,prefFromProduct(local),{expiryDate:pref.expiryDate,dateType:pref.dateType,freezeDate:pref.freezeDate,batch:pref.batch});else{const r=await fetchProductInfo(code);if(r.status==='ok'){const d=r.data;Object.assign(pref,{name:d.name||pref.name,brand:d.brand||pref.brand,category:d.category||pref.category,sub:d.sub||pref.sub,qty:d.qty||pref.qty,unit:d.unit||pref.unit,photo:d.photo})}}pref.barcode=code}
   else if(pref.name){const ex=M.findProductByName(pref.name,pref.brand);if(ex)Object.assign(pref,{existingProductId:ex.id,category:pref.category||ex.category,sub:pref.sub||ex.sub,unit:pref.unit||ex.unit})}
   if(hand&&pref.freezeDate&&!pref.locationId)pref.locationId=UI.scan.loc||'loc-dv-keuken';
   pref.info=err?'OCR mislukt: '+err+'. Dit gebeurt als de OCR-bibliotheek niet geladen kan worden (geen internet, of extern laden geblokkeerd). Vul de gegevens manueel in — de foto is bewaard.':(text.trim()?'Herkende gegevens zijn ingevuld'+(code?' (barcode '+code+' ook gevonden)':'')+'. Controleer ze voor je opslaat.':'Geen leesbare tekst gevonden. Probeer dichterbij, met meer licht en recht van voren.');pref.infoKind=err||!text.trim()?'warn':'';
@@ -1632,9 +1771,14 @@ A.ocrPhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;
 /* ---------- Bevestigingsscherm ---------- */
 function prefFromProduct(p){return {existingProductId:p.id,name:p.name,brand:p.brand,category:p.category,sub:p.sub,barcode:p.barcode,photo:p.photo,qty:p.lastQty||p.packSize||'',unit:p.lastUnit||p.unit,locationId:p.lastLocationId,minStock:p.minStock,packSize:p.packSize,packUnit:p.packUnit,openShelfDays:p.openShelfDays,pnotes:p.notes,reorderWhenEmpty:p.reorderWhenEmpty,kind:p.kind||'',brandRequired:!!p.brandRequired}}
 let CF=null;
+/* Bewaarplaatsen van de voorraad waartoe het product hoort (bij "Alles": alle). */
+function cfLocs(p){const dm=M.catDomain(p.category)||p.domain||UI.dom;return M.locations().filter(l=>!dm||M.locDomain(l)===dm||l.id===p.locationId)}
 function openConfirm(pref,ctx){pref=Object.assign({},pref);const inScanner=UI.view==='scanner';CF={pref,ctx:ctx||(inScanner?'scanner':'inline'),photo:pref.usePhoto&&!pref.photo?pref.photoCandidate:pref.photo||''};
-  if(!pref.locationId)pref.locationId=UI.scan.loc||(pref.category?suggestLocation(pref.category,pref.sub):'');
-  if(!pref.category&&pref.name){const c=classify(pref.name);if(c){pref.category=c.category;pref.sub=c.sub}}
+  if(!pref.category&&pref.name){const c=classifyHouse(pref.name)||(UI.dom==='badkamer'||UI.dom==='medicijnen')&&classifyCare(pref.name)||classify(pref.name);if(c){pref.category=c.category;pref.sub=c.sub}}
+  if(!pref.category&&UI.dom==='medicijnen'&&!pref.existingProductId)pref.category='Geneesmiddelen';
+  if(!pref.domain)pref.domain=pref.existingProductId&&M.S.products[pref.existingProductId]?M.productDomain(M.S.products[pref.existingProductId]):M.catDomain(pref.category)||UI.dom||'';
+  const sl=UI.scan.loc&&M.S.locations[UI.scan.loc];if(pref.locationId&&!M.S.locations[pref.locationId])pref.locationId='';
+  if(!pref.locationId)pref.locationId=(sl&&(!pref.domain||M.locDomain(sl)===pref.domain)?UI.scan.loc:'')||(pref.category?suggestLocation(pref.category,pref.sub):domDefaultLoc(pref.domain));
   if(pref.locationId&&M.isFreezer(pref.locationId)&&!pref.freezeDate&&pref.source!=='OCR etiket')pref.freezeDate=todayStr();
   if(pref.locationId&&M.isFreezer(pref.locationId)&&!pref.expiryDate){pref.expiryDate=freezeSuggest(pref,pref.freezeDate||todayStr());pref.dateType='EIGEN';pref.autoExp=true}
   openModal({title:pref.existingProductId?'Partij toevoegen':'Product bevestigen',gid:'dialog-confirm-product',wide:true,body:confirmBody,foot:()=>'<button type="button" class="btn" data-act="closeModal">Annuleren</button>'+(CF.ctx==='scanner'?'<button type="button" class="btn" data-act="cfSave" data-next="0">Opslaan</button><button type="button" class="btn primary" data-act="cfSave" data-next="1">Opslaan &amp; volgende</button>':'<button type="button" class="btn primary" data-act="cfSave" data-next="0">Opslaan</button>'),
@@ -1650,7 +1794,7 @@ function confirmBody(){const p=CF.pref;const ex=p.existingProductId&&M.S.product
   h+='<div class="row nowrap" style="align-items:flex-start;gap:14px"><div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div class="thumb" id="cf-thumb" style="width:84px;height:84px;flex-basis:84px;font-size:34px">'+(CF.photo?'<img src="'+esc(CF.photo)+'" alt="" onerror="this.remove()">':prodEmoji(p))+'</div><label class="btn sm" style="cursor:pointer">📷 Foto<input type="file" accept="image/*" capture="environment" hidden data-change="cfPhoto"></label>'+(CF.photo?'<button type="button" class="btn sm ghost" data-act="cfPhotoDel">Verwijder</button>':'')+'</div>';
   h+='<div class="grid2 grow"><div class="field span2"><label>Productnaam *</label><input name="name" class="inp" value="'+esc(p.name||'')+'" '+(p.name?'':'autofocus')+' placeholder="bv. Rundergehakt"></div><div class="field"><label>Merk</label><input name="brand" class="inp" value="'+esc(p.brand||'')+'"></div><div class="field"><label>Barcode / EAN</label><input name="barcode" class="inp mono" inputmode="numeric" value="'+esc(p.barcode||'')+'"></div>'+
    '<div class="field"><label>Categorie</label><select name="category" class="inp" data-change="cfCat"><option value="">—</option>'+sel(p.category||'',cats.map(c=>c.name))+'</select></div><div class="field"><label>Subcategorie</label><select name="sub" id="cf-sub" class="inp">'+subOptions(p.category,p.sub)+'</select></div></div></div>';
-  h+='<div><div class="lbl" style="margin-bottom:6px">Opslaglocatie *</div><div class="row" id="cf-locs">'+M.locations().map(l=>'<button type="button" class="chip" aria-pressed="'+(p.locationId===l.id)+'" data-act="cfLoc" data-id="'+esc(l.id)+'">'+esc(l.icon||'')+' '+esc(l.name)+'</button>').join('')+'</div><input type="hidden" name="locationId" value="'+esc(p.locationId||'')+'"></div>';
+  h+='<div><div class="lbl" style="margin-bottom:6px">Opslaglocatie *</div><div class="row" id="cf-locs">'+cfLocs(p).map(l=>'<button type="button" class="chip" aria-pressed="'+(p.locationId===l.id)+'" data-act="cfLoc" data-id="'+esc(l.id)+'">'+esc(l.icon||'')+' '+esc(l.name)+'</button>').join('')+'</div><input type="hidden" name="locationId" value="'+esc(p.locationId||'')+'"></div>';
   h+='<div class="grid4"><div class="field"><label>Hoeveelheid *</label><input name="qty" class="inp" type="number" step="any" min="0" inputmode="decimal" value="'+esc(p.qty==null?'':p.qty)+'" '+(p.name&&!p.qty?'autofocus':'')+'></div><div class="field"><label>Eenheid</label><select name="unit" class="inp">'+sel(p.unit||'stuks',UNITS.map(u=>[u.id,u.label]))+'</select></div><div class="field"><label>Aantal verpakkingen / zakken</label><input name="count" class="inp" type="number" min="1" max="50" value="'+(p.count||1)+'"></div>'+purchaseField(p.purchaseDate==null?todayStr():p.purchaseDate,!!p.purchaseUnknown||p.purchaseDate==='')+'</div><div class="hint" style="margin-top:-6px">Bij 2 zakken van 500 g: hoeveelheid 500, eenheid gram, aantal 2 → twee afzonderlijke voorraaditems.</div>';
   const fr=p.locationId&&M.isFreezer(p.locationId);
   h+='<div class="grid4"><div class="field"><label>Datumtype</label><select name="dateType" class="inp">'+sel(p.dateType||(p.expiryDate?'THT':(fr?'EIGEN':'THT')),DATE_TYPES)+'</select></div><div class="field"><label>Vervaldatum / gebruiksdatum</label><input name="expiryDate" id="cf-exp" type="date" class="inp" value="'+esc(p.expiryDate||'')+'"></div><div class="field"><label>Invriesdatum</label><input name="freezeDate" id="cf-fr" type="date" class="inp" value="'+esc(p.freezeDate||'')+'"></div><div class="field"><label>Batch / lot</label><input name="batch" class="inp" value="'+esc(p.batch||'')+'"></div></div>';
@@ -1672,7 +1816,7 @@ A.cfPhotoDel=()=>{cfSnapshot();CF.photo='';paintModal()};A.cfUseOcrPhoto=()=>{cf
 A.cfSave=d=>{cfSnapshot();const f=CF.pref;nutToPref(f);const next=d.next==='1';if(!f.name)throw new Error('Productnaam is verplicht.');if(!f.locationId||!M.S.locations[f.locationId])throw new Error('Kies een opslaglocatie.');const qty=Number(f.qty);if(!(qty>0))throw new Error('Geef een hoeveelheid groter dan 0.');
   if(f.dateType==='GEEN')f.expiryDate='';if(f.expiryDate&&f.dateType==='GEEN')f.dateType='EIGEN';if(f.expiryDate&&f.expiryDate<todayStr()&&f.dateType==='TGT'&&!confirm('Deze TGT-datum ligt in het verleden. Toch opslaan?'))return;
   const pdate=purchaseOf(f);const count=Math.min(50,Math.max(1,parseInt(f.count||1,10)));let pid=f.existingProductId;
-  const pdata={name:f.name,brand:f.brand,category:f.category,sub:f.sub,barcode:f.barcode,photo:CF.photo||'',minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,packUnit:f.packUnit,openShelfDays:Number(f.openShelfDays)||0,reorderWhenEmpty:!!f.reorderWhenEmpty,notes:f.pnotes,unit:f.punit||f.unit,kind:f.kind||'',brandRequired:!!f.brandRequired};if(f.health)pdata.health=f.health;
+  const pdata={name:f.name,brand:f.brand,category:f.category,sub:f.sub,barcode:f.barcode,photo:CF.photo||'',minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,packUnit:f.packUnit,openShelfDays:Number(f.openShelfDays)||0,reorderWhenEmpty:!!f.reorderWhenEmpty,notes:f.pnotes,unit:f.punit||f.unit,kind:f.kind||'',brandRequired:!!f.brandRequired};if(f.health)pdata.health=f.health;{const dm=M.catDomain(f.category)||(M.S.locations[f.locationId]?M.locDomain(M.S.locations[f.locationId]):'')||f.domain;if(dm)pdata.domain=dm}
   {const ex0=f.existingProductId&&M.S.products[f.existingProductId];const days=pdata.openShelfDays;
     if(f.osAuto&&days===f.osAuto.days&&!f.osOk)Object.assign(pdata,{openShelfSrc:f.osAuto.src,openShelfNote:f.osAuto.note||'',openShelfStore:f.osAuto.store||'',openShelfConf:f.osAuto.conf||'',openShelfAt:todayStr()});
     else if(ex0)Object.assign(pdata,osPatch(ex0,days,!!f.osOk));else if(days>0)pdata.openShelfSrc='zelf'}
@@ -1783,7 +1927,7 @@ function altHtml(p){const a=ALT[p.id];if(!a)return '<div class="small muted">Zoe
   if(!a.items.length)return '<div class="small muted">Geen beter scorend alternatief gevonden in deze categorie.</div>';
   return '<div class="list" style="margin-top:6px">'+a.items.map(it=>{const b=scoreBand(it.score);return '<div class="li" data-glean-id="alt-'+esc(p.id)+'-'+esc(it.code)+'"><div class="thumb">'+(it.photo?'<img src="'+esc(it.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(it.name)+(it.brand?' <span class="muted" style="font-weight:400">· '+esc(it.brand)+'</span>':'')+'</div><div class="sub-t"><span class="ys ys-'+b.cls+' est">≈ '+it.score+'</span> '+nutriBadge(it.nutri)+(it.nova?' NOVA '+it.nova:'')+(it.organic?' · bio':'')+'</div></div><div class="acts"><button type="button" class="btn sm" data-act="altShop" data-pid="'+esc(p.id)+'" data-code="'+esc(it.code)+'">+ Lijst</button><a class="btn sm ghost" href="https://world.openfoodfacts.org/product/'+encodeURIComponent(it.code)+'" target="_blank" rel="noopener">Info</a></div></div>'}).join('')+'</div>'}
 function rerenderHealth(){if(Modals.length)paintModal();else render()}
-async function refreshHealth(pid,quiet,force){const p=M.S.products[pid];if(!p||!p.barcode)return false;const r=await fetchOFF(p.barcode);
+async function refreshHealth(pid,quiet,force){const p=M.S.products[pid];if(!p||!p.barcode||M.productDomain(p)!=='keuken')return false;const r=await fetchOFF(p.barcode);
   if(r.status!=='ok'){if(!quiet)toast(r.status==='notfound'?'Product niet gevonden in Open Food Facts.':'Open Food Facts niet bereikbaar ('+r.error+').','error');return false}
   let h=r.data.health;const own=p.health&&p.health.src==='etiket';
   if(own&&!force){if(h&&h.nutri){quietSave(pid,{health:Object.assign({},p.health,{offNutri:h.nutri}),photo:p.photo||r.data.photo||''});if(!quiet)toast('Open Food Facts heeft nu ook gegevens (Nutri-Score '+h.nutri.toUpperCase()+'). Je eigen etiketgegevens blijven staan — kies "Vervangen" als je liever die van Open Food Facts gebruikt.');return true}
@@ -1803,7 +1947,7 @@ A.altSearch=async d=>{const p=M.S.products[d.id];const h=p&&p.health;if(!h||!h.c
     if(items.length<2){list=list.concat(await offSearch(q));items=rankAlternatives(p,list,over)}ALT[p.id]={status:'ok',items}}
   catch(e){ALT[p.id]={status:'error',error:e.message}}rerenderHealth()};
 A.altShop=d=>{const a=ALT[d.pid];const it=a&&a.items&&a.items.find(x=>x.code===d.code);const p=M.S.products[d.pid];if(!it)return;M.addShopping({name:it.name,brand:it.brand,qty:1,unit:'stuks',category:p&&p.category,sub:p&&p.sub,note:'Gezonder alternatief voor '+(p?p.name:'')+' (score '+it.score+')'});toast(it.name+' staat op je boodschappenlijst.')};
-A.healthFetchAll=async()=>{const ps=M.products().filter(p=>p.barcode&&!p.health&&M.productTotal(p.id)>0);if(!ps.length){toast('Alle producten met barcode hebben al gegevens.');return}
+A.healthFetchAll=async()=>{const ps=M.products().filter(p=>p.barcode&&!p.health&&M.productTotal(p.id)>0&&M.productDomain(p)==='keuken');if(!ps.length){toast('Alle producten met barcode hebben al gegevens.');return}
   toast('Gegevens ophalen voor '+ps.length+' producten…');let ok=0;for(const p of ps){if(await refreshHealth(p.id,true))ok++;await new Promise(r=>setTimeout(r,650))}toast(ok+' van '+ps.length+' producten bijgewerkt.'+(ok<ps.length?' De rest staat niet in Open Food Facts of de verbinding faalde.':''))};
 A.addRisk=(d,el)=>{setPath('health.addRisk.'+d.code,el.value);toast('Opgeslagen.')};
 A.addListFetch=async()=>{toast('Volledige additievenlijst ophalen bij Open Food Facts… (enkele MB)');let j;try{const r=await fetch('https://static.openfoodfacts.org/data/taxonomies/additives.json');if(!r.ok)throw new Error('HTTP '+r.status);j=await r.json()}catch(e){throw new Error('Ophalen mislukt ('+(e.message||e)+'). De ingebouwde lijst blijft in gebruik.')}
@@ -1840,7 +1984,7 @@ function healthLine(h){const e=estimateScore(h,hSet().addRisk);return e?' · gez
 /* Automatisch ophalen: producten met barcode zonder gegevens, rustig na elkaar, max. 1× per 3 dagen per product */
 const AUTOH={running:false};
 async function autoHealth(){if(AUTOH.running||!M||(typeof navigator!=='undefined'&&navigator.onLine===false))return;AUTOH.running=true;let tried={};try{tried=JSON.parse(localStorage.getItem('vb-htried')||'{}')}catch(e){}
-  const now=Date.now(),wait=3*864e5;const own=p=>p.health&&p.health.src==='etiket';const ps=M.products().filter(p=>p.barcode&&(own(p)?!p.health.offNutri:!(p.health&&p.health.nutri))&&M.productTotal(p.id)>0&&!(tried[p.id]&&now-tried[p.id]<(own(p)?14*864e5:wait))).slice(0,25);let n=0;
+  const now=Date.now(),wait=3*864e5;const own=p=>p.health&&p.health.src==='etiket';const ps=M.products().filter(p=>M.productDomain(p)==='keuken'&&p.barcode&&(own(p)?!p.health.offNutri:!(p.health&&p.health.nutri))&&M.productTotal(p.id)>0&&!(tried[p.id]&&now-tried[p.id]<(own(p)?14*864e5:wait))).slice(0,25);let n=0;
   for(const p of ps){tried[p.id]=now;try{localStorage.setItem('vb-htried',JSON.stringify(tried))}catch(e){}if(await refreshHealth(p.id,true))n++;await new Promise(r=>setTimeout(r,1500))}
   AUTOH.running=false;if(n&&(UI.view==='gezondheid'||UI.view==='voorraad'))render();return n}
 
@@ -2133,7 +2277,7 @@ function weekStart(){if(!UI.rec.week)UI.rec.week=mondayOf(todayStr());return UI.
 VIEW_RENDER.recepten=function(){const tab=UI.params.tab||UI.rec.tab;UI.rec.tab=tab;const tabs=[['suggesties','Wat kan ik maken?'],['week','Weekplanner'],['mijn','Mijn recepten']];
   let h='<div class="tabs" role="tablist">'+tabs.map(t=>'<button type="button" class="tab" role="tab" id="tab-'+t[0]+'" aria-controls="panel-'+t[0]+'" aria-selected="'+(tab===t[0])+'" data-act="recTab" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div role="tabpanel" id="panel-'+tab+'" aria-labelledby="tab-'+tab+'" data-glean-id="recipes-'+tab+'">';
   h+=tab==='week'?weekView():tab==='mijn'?myRecipes():suggestView();return h+'</div>'};
-A.recTab=d=>{UI.rec.tab=d.tab;go('recepten',{tab:d.tab})};
+A.recTab=d=>{UI.rec.tab=d.tab;if(d.tab!=='mijn')UI.rec.sel=null;go('recepten',{tab:d.tab})};
 function filterChips(f,act){return REC_FILTERS.map(x=>'<button type="button" class="chip" aria-pressed="'+!!f[x[0]]+'" data-act="'+act+'" data-k="'+x[0]+'">'+x[1]+'</button>').join('')}
 function suggestView(){const f=UI.rec.f;let h='<div class="toolbar"><input id="rec-q" class="inp" style="max-width:240px" placeholder="Zoek gerecht…" value="'+esc(UI.rec.q)+'" data-input="recQ"><select class="inp" style="max-width:170px" data-change="recMeal">'+sel(UI.rec.meal,[['','Alle maaltijden'],['ontbijt','Ontbijt'],['lunch','Lunch'],['avond','Avondmaal']])+'</select>'+filterChips(f,'recF')+'</div>';
   h+=aiBanner();
@@ -2213,10 +2357,36 @@ document.addEventListener('dragleave',e=>{const c=e.target.closest&&e.target.clo
 document.addEventListener('drop',e=>{const c=e.target.closest&&e.target.closest('[data-drop]');if(!c)return;e.preventDefault();c.classList.remove('drop');const from=e.dataTransfer.getData('text/plain');if(!from||from===c.dataset.drop)return;const [dt,m]=c.dataset.drop.split('|');M.movePlan(from,dt,m)});
 
 /* ---------- Mijn recepten ---------- */
-function myRecipes(){const mine=Object.values(M.S.recipes).sort((a,b)=>a.name.localeCompare(b.name));const hidden=Object.keys(M.state().hiddenRecipes||{}).map(id=>BUILTIN_RECIPES.find(r=>r.id===id)).filter(Boolean);
-  let h='<div class="toolbar"><div class="grow muted small">'+BUILTIN_RECIPES.length+' ingebouwde recepten + '+mine.length+' eigen recepten</div><button type="button" class="btn primary" data-act="editRecipe">+ Nieuw recept</button></div>';
-  h+='<div class="card" data-glean-id="my-recipes">'+(mine.length?'<div class="list">'+mine.map(r=>'<div class="li"><div class="thumb">'+esc(r.emoji||'🍽️')+'</div><div class="grow"><div class="main-t" style="cursor:pointer" data-act="recipe" data-id="'+esc(r.id)+'">'+esc(r.name)+'</div><div class="sub-t">'+r.ing.length+' ingrediënten · ⏱ '+r.time+' min · '+(r.meals||[]).map(m=>MEAL_LABEL[m]).join(', ')+(r.source==='gemini'?' · ✨ AI':'')+'</div></div><button type="button" class="btn sm" data-act="editRecipe" data-id="'+esc(r.id)+'">✎</button><button type="button" class="btn sm danger" data-act="delRecipe" data-id="'+esc(r.id)+'">🗑</button></div>').join('')+'</div>':'<div class="empty">Nog geen eigen recepten. Voeg je familieklassiekers toe — ze worden meteen gebruikt in suggesties en het weekmenu.</div>')+'</div>';
-  if(hidden.length)h+='<div class="card" style="margin-top:14px" data-glean-id="hidden-recipes"><h2 class="panel-title">Verborgen ingebouwde recepten</h2><div class="row">'+hidden.map(r=>'<button type="button" class="chip" data-act="unhideRecipe" data-id="'+esc(r.id)+'">↺ '+esc(r.name)+'</button>').join('')+'</div></div>';return h}
+function myRecipes(){const mine=Object.values(M.S.recipes).sort((a,b)=>a.name.localeCompare(b.name,'nl'));const hidden=Object.keys(M.state().hiddenRecipes||{}).map(id=>BUILTIN_RECIPES.find(r=>r.id===id)).filter(Boolean);
+  const sel=UI.rec.sel;if(sel)return selectView(mine);
+  let h='<div class="toolbar"><div class="grow muted small">'+BUILTIN_RECIPES.length+' ingebouwde recepten + '+mine.length+' eigen recepten</div><button type="button" class="btn" data-act="recSelOn" data-glean-id="rec-select-on">☑ Meerdere selecteren</button><button type="button" class="btn primary" data-act="editRecipe">+ Nieuw recept</button></div>';
+  h+='<div class="card" data-glean-id="my-recipes">'+(mine.length?'<div class="list">'+mine.map(r=>'<div class="li"><div class="thumb">'+esc(r.emoji||'🍽️')+'</div><div class="grow"><div class="main-t" style="cursor:pointer" data-act="recipe" data-id="'+esc(r.id)+'">'+esc(r.name)+'</div><div class="sub-t">'+recSub(r)+'</div></div><button type="button" class="btn sm" data-act="editRecipe" data-id="'+esc(r.id)+'" aria-label="'+esc(r.name)+' bewerken">✎</button><button type="button" class="btn sm danger" data-act="delRecipe" data-id="'+esc(r.id)+'" aria-label="'+esc(r.name)+' verwijderen">🗑</button></div>').join('')+'</div>':'<div class="empty">Nog geen eigen recepten. Voeg je familieklassiekers toe — ze worden meteen gebruikt in suggesties en het weekmenu.</div>')+'</div>';
+  if(hidden.length)h+='<div class="card" style="margin-top:14px" data-glean-id="hidden-recipes"><div class="row between"><h2 class="panel-title">Verborgen ingebouwde recepten</h2>'+(hidden.length>1?'<button type="button" class="btn sm ghost" data-act="unhideAll">↺ Alles terugzetten</button>':'')+'</div><div class="row">'+hidden.map(r=>'<button type="button" class="chip" data-act="unhideRecipe" data-id="'+esc(r.id)+'">↺ '+esc(r.name)+'</button>').join('')+'</div></div>';return h}
+function recSub(r){return (r.ing||[]).length+' ingrediënten · ⏱ '+r.time+' min · '+(r.meals||[]).map(m=>MEAL_LABEL[m]).join(', ')+(r.source==='gemini'?' · ✨ AI':'')}
+/* Selectiemodus: eigen recepten verwijderen, ingebouwde verbergen — in één keer, met ongedaan maken */
+function selectView(mine){const sel=UI.rec.sel,ids=sel.ids;const built=BUILTIN_RECIPES.filter(r=>!(M.state().hiddenRecipes||{})[r.id]).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
+  const nOwn=mine.filter(r=>ids[r.id]).length,nBuilt=built.filter(r=>ids[r.id]).length,n=nOwn+nBuilt,ai=mine.filter(r=>r.source==='gemini');
+  const row=(r,own)=>'<label class="li check rec-pick'+(ids[r.id]?' on':'')+'" data-glean-id="rec-pick-'+esc(r.id)+'"><input type="checkbox" data-change="recSelToggle" data-id="'+esc(r.id)+'"'+(ids[r.id]?' checked':'')+'><div class="thumb" aria-hidden="true">'+esc(r.emoji||'🍽️')+'</div><div class="grow"><div class="main-t">'+esc(r.name)+'</div><div class="sub-t">'+recSub(r)+(own?'':' · ingebouwd')+'</div></div></label>';
+  let h='<div class="toolbar rec-sel-bar" data-glean-id="rec-select-bar"><b class="grow" aria-live="polite">'+(n?n+' geselecteerd':'Kies de recepten')+'</b>'+
+    (mine.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="own">Alle eigen recepten</button>':'')+(ai.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="ai">Alle ✨ AI-recepten ('+ai.length+')</button>':'')+
+    (n?'<button type="button" class="btn sm ghost" data-act="recSelNone">Niets</button>':'')+
+    '<button type="button" class="btn sm danger" data-act="recSelDel"'+(n?'':' disabled')+'>🗑 '+(nBuilt&&!nOwn?'Verbergen':'Verwijderen')+(n?' ('+n+')':'')+'</button><button type="button" class="btn sm" data-act="recSelOff">Klaar</button></div>';
+  h+='<div class="card" data-glean-id="rec-select-own"><h2 class="panel-title">Eigen recepten</h2>'+(mine.length?'<div class="list">'+mine.map(r=>row(r,true)).join('')+'</div>':'<div class="empty">Nog geen eigen recepten.</div>')+'</div>';
+  h+='<details class="card" style="margin-top:14px" data-glean-id="rec-select-built"'+(sel.openBuilt?' open':'')+'><summary class="panel-title" data-act="recBuiltOpen">Ingebouwde recepten verbergen <span class="muted small">('+built.length+')</span></summary><p class="muted small">Ingebouwde recepten worden niet gewist, alleen verborgen. Je zet ze terug via "Verborgen ingebouwde recepten".</p><div class="list">'+built.map(r=>row(r,false)).join('')+'</div></details>';
+  return h}
+A.recSelOn=()=>{UI.rec.sel={ids:{},openBuilt:false};render()};
+A.recSelOff=()=>{UI.rec.sel=null;render()};
+A.recBuiltOpen=()=>{if(UI.rec.sel){UI.rec.sel.openBuilt=!UI.rec.sel.openBuilt;render()}};
+A.recSelToggle=(d,el)=>{const s=UI.rec.sel;if(!s)return;if(el.checked)s.ids[d.id]=true;else delete s.ids[d.id];render()};
+A.recSelAll=d=>{const s=UI.rec.sel;if(!s)return;Object.values(M.S.recipes).filter(r=>d.k!=='ai'||r.source==='gemini').forEach(r=>s.ids[r.id]=true);render()};
+A.recSelNone=()=>{if(UI.rec.sel){UI.rec.sel.ids={};render()}};
+A.recSelDel=()=>{const s=UI.rec.sel;if(!s)return;const ids=Object.keys(s.ids).filter(id=>M.recipeById(id));if(!ids.length)return;
+  const own=ids.filter(id=>M.S.recipes[id]),built=ids.length-own.length,pl=M.planUses(own).length;
+  const txt=[own.length?own.length+(own.length===1?' eigen recept wordt verwijderd':' eigen recepten worden verwijderd'):'',built?built+(built===1?' ingebouwd recept wordt verborgen':' ingebouwde recepten worden verborgen'):''].filter(Boolean).join(' en ')+'.'+
+    (pl?' '+pl+(pl===1?' gepland gerecht verdwijnt':' geplande gerechten verdwijnen')+' uit je weekmenu.':'')+' Je kan dit meteen ongedaan maken.';
+  confirmBox(own.length?'Recepten verwijderen':'Recepten verbergen',txt,own.length?'Verwijderen ('+ids.length+')':'Verbergen ('+ids.length+')',()=>{const r=M.removeRecipes(ids);UI.rec.sel=null;render();
+    toast([r.deleted?r.deleted+' verwijderd':'',r.hidden?r.hidden+' verborgen':''].filter(Boolean).join(', ')+'.','',{label:'Ongedaan maken',fn:()=>{M.restoreRecipes(r.undo);render();toast('Hersteld.')}})},true)};
+A.unhideAll=()=>{M.saveState({hiddenRecipes:{}});toast('Alle ingebouwde recepten staan weer aan.')};
 A.unhideRecipe=d=>{const h=Object.assign({},M.state().hiddenRecipes||{});delete h[d.id];M.saveState({hiddenRecipes:h})};
 A.delRecipe=d=>{const r=M.S.recipes[d.id];confirmBox('Recept verwijderen','"'+r.name+'" verwijderen?','Verwijderen',()=>{M.deleteRecipe(d.id);toast('Recept verwijderd.')},true)};
 let RF=null;
@@ -2423,7 +2593,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='2.9 · 21-11-2026';
+const APP_VERSION='3.3 · 22-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -2547,7 +2717,7 @@ const Shelf={busy:false,_t:null,
     const list=this.todo(!!manual);if(!list.length){if(manual)this.setMsg('Alle producten hebben al een houdbaarheid na opening.','');return {n:0}}
     this.busy=true;if(UI.view==='instellingen')scheduleRender();let n=0,asked=0,err='',code='';const maxB=manual?10:3;
     try{for(let i=0;i<list.length&&i<maxB*SHELF_BATCH;i+=SHELF_BATCH){const part=list.slice(i,i+SHELF_BATCH);
-        const j=await Sync.call('aiShelf',{products:part.map(p=>({id:p.id,name:p.name,brand:p.brand||'',kind:p.kind||'',category:p.category||'',sub:p.sub||''}))},null,120000);
+        const j=await Sync.call('aiShelf',{products:part.map(p=>({id:p.id,name:p.name,brand:p.brand||'',kind:p.kind||'',category:p.category||'',sub:p.sub||'',domain:M.productDomain(p)}))},null,120000);
         n+=M.applyOpenShelf((j.items||[]).map(x=>({id:x.id,days:x.days,nvt:!!x.nvt,store:x.store,conf:x.conf,src:'geschat'})));asked+=part.length;
         const tr=this.tried();part.forEach(p=>{tr[p.id]=todayStr()});Object.keys(tr).forEach(id=>{if(!M.S.products[id])delete tr[id]});LS.set('shelfTried',tr)}
       LS.set('shelfStop',null)}
@@ -2572,6 +2742,220 @@ function shelfSection(){const s=M.openShelfStats();const m=Shelf.msg();const est
   return h+'</div>'}
 A.shelfToggle=(d,el)=>{LS.set('shelfAI',!!el.checked);if(el.checked){LS.set('shelfStop',null);Shelf.soon(500)}render()};
 A.shelfRun=async()=>{const r=await Shelf.run(true);const m=Shelf.msg();toast(m&&m.text||'Klaar.',r&&r.err?'error':undefined);render()};
+
+/* ---------- Meerdere voorraden: Keuken · Badkamer · Medicijnkast · Huishouden ---------- */
+const DOM_VIEWS=['dashboard','voorraad','opslag','vervaldata','scanner'];
+/* Gekozen voorraad: pas gelezen bij eerste gebruik (LS staat later in de bundel). */
+let _dom=null;Object.defineProperty(UI,'dom',{get(){if(_dom===null){try{_dom=LS.get('dom','')||''}catch(e){_dom=''}}return _dom},set(v){_dom=v||''},enumerable:true});
+function viewDom(v){if(v==='recepten'||v==='gezondheid')return 'keuken';if(v==='medicijnen')return 'medicijnen';return DOM_VIEWS.includes(v)?UI.dom:''}
+function domBar(v){if(!DOM_VIEWS.includes(v))return '';const cnt=d=>Object.values(M.S.products).filter(p=>M.productDomain(p)===d&&M.productTotal(p.id)>0).length;
+  return '<div class="seg dom-bar" role="group" aria-label="Welke voorraad" data-glean-id="dom-bar"><button type="button" data-act="setDom" data-d="" aria-pressed="'+(!UI.dom)+'">Alles</button>'+
+    M.orderedDomains().map(d=>'<button type="button" data-act="setDom" data-d="'+d[0]+'" aria-pressed="'+(UI.dom===d[0])+'">'+d[2]+' '+esc(d[1])+' <span class="muted small">'+cnt(d[0])+'</span></button>').join('')+'</div>'+
+    '<button type="button" class="icon-btn dom-order" data-act="domOrder" title="Volgorde aanpassen" aria-label="Volgorde van de voorraden aanpassen">⇅</button>'}
+/* Volgorde van de voorraden: pijltjes (werkt met aanraken, muis en toetsenbord), meteen bewaard en gesynchroniseerd */
+function domOrderList(){const o=M.orderedDomains();return '<div class="list dom-order-list" data-glean-id="dom-order-list"><div class="li"><div class="thumb" aria-hidden="true">📦</div><div class="grow"><div class="main-t">Alles</div><div class="sub-t">Staat altijd eerst</div></div></div>'+
+  o.map((d,i)=>'<div class="li" data-glean-id="dom-order-'+d[0]+'"><div class="thumb" aria-hidden="true">'+d[2]+'</div><div class="grow"><div class="main-t">'+(i+1)+'. '+esc(d[1])+'</div></div>'+
+    '<button type="button" class="btn sm" data-act="domMove" data-d="'+d[0]+'" data-step="-1"'+(i===0?' disabled':'')+' aria-label="'+esc(d[1])+' omhoog">↑</button>'+
+    '<button type="button" class="btn sm" data-act="domMove" data-d="'+d[0]+'" data-step="1"'+(i===o.length-1?' disabled':'')+' aria-label="'+esc(d[1])+' omlaag">↓</button></div>').join('')+'</div>'}
+A.domOrder=()=>openModal({title:'Volgorde van de voorraden',gid:'dialog-dom-order',body:()=>'<p class="muted small" style="margin-top:0">Zo staan ze bovenaan het Dashboard, Mijn voorraad, Opslagplaatsen, Vervaldatums en de Scanner. Geldt op al je gekoppelde toestellen.</p>'+domOrderList(),
+  foot:'<button type="button" class="btn ghost" data-act="domReset">Standaardvolgorde</button><span class="grow"></span><button type="button" class="btn primary" data-act="closeModal">Klaar</button>'});
+A.domMove=d=>{M.moveDomain(d.d,Number(d.step));if(Modals.length)paintModal();render(true);const b=$('[data-act="domMove"][data-d="'+d.d+'"][data-step="'+d.step+'"]');if(b&&!b.disabled)b.focus();else{const o=$('[data-act="domMove"][data-d="'+d.d+'"]:not([disabled])');if(o)o.focus()}};
+A.domReset=()=>{M.resetDomainOrder();if(Modals.length)paintModal();render(true);toast('Standaardvolgorde hersteld.')};
+A.setDom=d=>{UI.dom=d.d||'';LS.set('dom',UI.dom);if(UI.view==='opslag'&&UI.params.id&&M.S.locations[UI.params.id]&&UI.dom&&M.locDomain(M.S.locations[UI.params.id])!==UI.dom){go('opslag');return}render(true)};
+/* Standaardbewaarplaats als er nog geen categorie is */
+function domDefaultLoc(d){return d==='badkamer'?'loc-badkamerkast':d==='medicijnen'?'loc-medicijnkast':d==='huishouden'?'loc-berging':''}
+
+/* ---------- Open Beauty Facts (badkamerproducten) ---------- */
+const BEAUTY_RULES=[[/shampoo|conditioner|haarmasker|hair|cheveux/,'Haarverzorging'],[/douche|shower|bad|bain|zeep|soap|savon/,'Douche en bad'],[/tandpasta|toothpaste|mondwater|mouthwash|dentifrice|tandenborstel|flos/,'Mond en tanden'],
+  [/deo|deodorant|anti-transpirant/,'Deodorant'],[/scheer|shav|razor|rasoir/,'Scheren'],[/zon|sun|spf|solaire/,'Zonnebescherming'],[/mascara|lipstick|make-up|foundation|eyeliner|nagellak/,'Make-up'],[/creme|crème|cream|lotion|serum|gezicht|face|bodymilk|lippenbalsem/,'Huid en gezicht']];
+const HYG_RULES=[[/toiletpapier|toilet paper|wc-papier/,'Toiletpapier'],[/tissue|zakdoek|mouchoir/,'Tissues'],[/maandverband|tampon|inlegkruis/,'Maandverband en tampons'],[/wattenstaaf|watten|coton/,'Watten en wattenstaafjes'],[/luier|pamper|couche/,'Luiers']];
+const MED_RULES=[[/paracetamol|dafalgan|perdolan|ibuprofen|nurofen|aspirine|asaflow|diclofenac|voltaren/,'Pijn en koorts'],[/neusspray|otrivine|sinutab|keelpastille|strepsils|keel/,'Verkoudheid en keel'],[/hoest|siroop|bisolvon|toularynx/,'Hoest'],
+  [/imodium|loperamide|maagzuur|rennie|gaviscon|omeprazol|movicol|laxeer/,'Maag en darm'],[/cetirizine|loratadine|zyrtec|allergie|antihistamin/,'Allergie'],[/vitamine|vitamin|magnesium|ijzer|zink|calcium|omega/,'Vitaminen']];
+function classifyCare(name,tags){const t=norm((name||'')+' '+(tags||[]).join(' '));
+  for(const r of HYG_RULES)if(r[0].test(t))return {category:'Hygiëne en papier',sub:r[1]};
+  for(const r of MED_RULES)if(r[0].test(t))return {category:r[1]==='Vitaminen'?'Vitaminen en supplementen':'Geneesmiddelen',sub:r[1]};
+  for(const r of BEAUTY_RULES)if(r[0].test(t))return {category:'Lichaamsverzorging',sub:r[1]};return null}
+function mapOBF(code,json){const m=mapOFF(code,json);if(!m)return null;const c=classifyCare(m.name,json.product&&json.product.categories_tags)||{category:'Lichaamsverzorging',sub:''};
+  return Object.assign(m,{category:c.category,sub:c.sub,source:'Open Beauty Facts',domain:M?M.catDomain(c.category)||'badkamer':'badkamer'})}
+async function fetchOBF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
+  try{const r=await fetch('https://world.openbeautyfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOBF(code,j);return m?{status:'ok',data:m}:{status:'notfound'}}
+  catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
+/* Eerst de databank die bij de gekozen voorraad hoort, daarna de andere. */
+/* ---------- Open Products Facts (wasmiddel, vaat, schoonmaak) ---------- */
+function mapOPF(code,json){const m=mapOFF(code,json);if(!m)return null;const tags=json.product&&json.product.categories_tags;const c=classifyHouse(m.name,tags)||{category:'Schoonmaak',sub:''};
+  return Object.assign(m,{category:c.category,sub:c.sub,source:'Open Products Facts',domain:'huishouden'})}
+async function fetchOPF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
+  try{const r=await fetch('https://world.openproductsfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOPF(code,j);return m?{status:'ok',data:m}:{status:'notfound'}}
+  catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
+/* Een wasmiddel dat in een andere databank staat, toch onder Huishouden zetten. */
+function houseFix(r){if(r.status!=='ok'||r.data.domain==='huishouden')return r;const c=classifyHouse(r.data.name);if(c)Object.assign(r.data,{category:c.category,sub:c.sub,domain:'huishouden'});return r}
+/* Eerst de databank die bij de gekozen voorraad hoort, daarna de andere. */
+async function fetchProductInfo(code){const order=UI.dom==='huishouden'?[fetchOPF,fetchOBF,fetchOFF]:(UI.dom==='badkamer'||UI.dom==='medicijnen')?[fetchOBF,fetchOFF,fetchOPF]:[fetchOFF,fetchOBF,fetchOPF];
+  let first=null;for(const f of order){const r=await f(code);if(r.status==='ok')return houseFix(r);if(!first)first=r}return first}
+
+/* ---------- Medicijnkast ---------- */
+const MED_NOTE='Het advies volgt de bijsluiter en is geen diagnose. Twijfel je, of houden de klachten aan? Vraag het aan je apotheker of arts. Noodgeval: 112 · Antigifcentrum 070 245 245.';
+const FAGG_URL='https://www.fagg-afmps.be/nl/menselijk_gebruik/geneesmiddelen/geneesmiddelen/info_over_geneesmiddelen/geneesmiddelendatabank';
+const VERDICT={ja:['✅','Mag volgens de bijsluiter','lv-green'],opletten:['⚠️','Mag, maar let op','lv-yellow'],nee:['⛔','Niet innemen','lv-red'],arts:['🩺','Eerst je arts of apotheker vragen','lv-orange']};
+const medAI=()=>typeof Sync!=='undefined'&&!!Sync.cfg;
+function memberLine(m){const a=M.memberAge(m);return [a?(a.years<2?a.months+' maanden':a.years+' jaar'):'',m.weight?fmtNum(m.weight)+' kg':''].filter(Boolean).join(' · ')}
+function timeLabel(ts){const d=new Date(ts);return (todayStr(d)===todayStr()?'vandaag':fmtDate(todayStr(d)))+' '+pad(d.getHours())+':'+pad(d.getMinutes())}
+function medLotInfo(p){const ls=M.fifoLots(p.id);if(!ls.length)return {txt:'Op',cls:'lv-red'};const e=M.lotExpiry(ls[0]);
+  if(e.level==='expired')return {txt:'Vervallen '+fmtDate(e.date),cls:'lv-red'};return {txt:fmtQty(M.productTotal(p.id),p.unit)+(e.date?' · tot '+fmtDate(e.date):''),cls:e.days!=null&&e.days<=30?'lv-yellow':''}}
+VIEW_RENDER.medicijnen=function(){const mem=M.members();const meds=M.medProducts();const q=UI.medQ||'';
+  let h='<div class="note" data-glean-id="med-note">💊 '+esc(MED_NOTE)+'</div>';
+  h+='<section class="card" data-glean-id="med-gezin"><div class="row between"><h2 class="panel-title">Gezinsleden</h2><button type="button" class="btn sm" data-act="memEdit">+ Gezinslid</button></div>';
+  h+=mem.length?'<div class="row" style="margin-top:8px">'+mem.map(m=>'<button type="button" class="chip" data-act="memEdit" data-id="'+esc(m.id)+'">👤 '+esc(m.name)+(memberLine(m)?' <span class="muted small">'+esc(memberLine(m))+'</span>':'')+'</button>').join('')+'</div>':'<div class="empty">Voeg je gezinsleden toe. Leeftijd en gewicht zijn nodig voor de juiste dosis.</div>';
+  h+='<div class="hint" style="margin-top:6px">Namen blijven op je toestel en in je eigen Google Sheet. Naar Gemini gaan alleen leeftijd, gewicht, allergieën, aandoeningen en vaste medicatie.</div></section>';
+  h+='<section class="card" data-glean-id="med-zoek"><h2 class="panel-title">Waar heb je last van?</h2><div class="row"><input class="inp grow" id="med-q" value="'+esc(q)+'" placeholder="bv. hoofdpijn, koorts, hooikoorts" data-enter="medFind" aria-label="Klacht"><button type="button" class="btn" data-act="medFind">Zoeken in mijn kast</button></div>';
+  if(q){const r=M.medFind(q,p=>{const x=(lfSecs(p.id)||[]).find(z=>z.nr===1);return x?x.tekst.slice(0,3000):''});h+=r.length?'<div class="list" style="margin-top:8px">'+r.slice(0,6).map(x=>medRow(x.p)).join('')+'</div>':'<div class="empty">Niets in je kast vermeldt "'+esc(q)+'" in de bijsluiter. Vraag raad aan je apotheker.</div>'}
+  h+='</section><section class="card" data-glean-id="med-kast"><div class="row between"><h2 class="panel-title">In de kast ('+meds.length+')</h2><button type="button" class="btn sm" data-act="go" data-view="scanner" data-pmode="barcode">📷 Doos scannen</button></div>';
+  h+=meds.length?'<div class="list" style="margin-top:6px">'+meds.map(medRow).join('')+'</div>':'<div class="empty">Nog geen geneesmiddelen. Kies bovenaan "Medicijnkast" en scan de doos (de DataMatrix-code bevat ook de vervaldatum en het lotnummer).</div>';
+  h+='</section>';const ins=M.intakes().slice(0,25);
+  h+='<section class="card" data-glean-id="med-innames"><h2 class="panel-title">Laatste innames</h2>'+(ins.length?'<div class="list">'+ins.map(x=>{const m=M.memberById(x.memberId);const v=VERDICT[x.verdict];
+    return '<div class="item"><div class="grow"><b>'+esc(m?m.name:'(verwijderd)')+'</b> · '+esc(x.name)+(x.dose?' · '+esc(x.dose):x.units!==1?' · '+fmtNum(x.units)+'×':'')+'<div class="small muted">'+esc(timeLabel(x.ts))+(v?' · '+v[0]+' '+esc(v[1]):'')+'</div></div><button type="button" class="btn sm ghost" data-act="intakeDel" data-id="'+esc(x.id)+'" aria-label="Inname verwijderen">✕</button></div>'}).join('')+'</div>':'<div class="empty">Nog geen innames geregistreerd.</div>')+'</section>';
+  return h};
+function medRow(p){const li=medLotInfo(p);const m=p.med||{};const subs=M.medSubstances(p);
+  return '<div class="item"><div class="grow"><b>'+esc(p.name)+'</b>'+(subs.length?' <span class="muted small">'+esc((m.stoffen||[]).map(s=>[s.naam,s.sterkte].filter(Boolean).join(' ')).join(', '))+'</span>':'')+
+    '<div class="small"><span class="tag '+li.cls+'">'+esc(li.txt)+'</span> '+(m.link?'<span class="tag">📄 Officiële bijsluiter</span>':hasLeaflet(p)?'<span class="tag">📄 Bijsluiter (foto of tekst)</span>':'<span class="tag lv-yellow">Bijsluiter ontbreekt</span>')+(m.voorschrift?' <span class="tag">Op voorschrift</span>':'')+((m.indicaties||[]).length?' <span class="muted">'+esc(m.indicaties.slice(0,4).join(', '))+'</span>':'')+'</div></div>'+
+    '<button type="button" class="btn sm" data-act="leaflet" data-id="'+esc(p.id)+'">📄</button><button type="button" class="btn sm primary" data-act="intake" data-id="'+esc(p.id)+'">Innemen</button></div>'}
+A.medFind=()=>{UI.medQ=(($('#med-q')||{}).value||'').trim();render()};
+A.intakeDel=d=>confirmDlg('Deze inname verwijderen?','Verwijderen',()=>{M.deleteIntake(d.id);toast('Inname verwijderd.')});
+function confirmDlg(text,ok,fn){openModal({title:'Bevestigen',body:'<p>'+esc(text)+'</p>',foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="confirmOk">'+esc(ok)+'</button>',onOk:fn})}
+
+/* Gezinslid */
+A.memEdit=d=>{const m=d.id?M.memberById(d.id):null;const v=m||{};const f=(n,l,inp)=>'<div class="field"><label for="mem-'+n+'">'+l+'</label>'+inp+'</div>';
+  openModal({title:m?'Gezinslid bewerken':'Gezinslid toevoegen',gid:'dialog-member',body:'<div class="grid2">'+
+    f('name','Naam (blijft op je toestel)','<input class="inp" id="mem-name" name="name" value="'+esc(v.name||'')+'" autofocus>')+
+    f('birth','Geboortedatum','<input class="inp" type="date" id="mem-birth" name="birth" value="'+esc(v.birth||'')+'">')+
+    f('age','of leeftijd (jaar)','<input class="inp" type="number" min="0" max="120" step="0.5" id="mem-age" name="age" value="'+esc(v.age==null?'':v.age)+'">')+
+    f('weight','Gewicht (kg)','<input class="inp" type="number" min="1" max="300" step="0.1" id="mem-weight" name="weight" value="'+esc(v.weight||'')+'">')+
+    f('sex','Geslacht','<select class="inp" id="mem-sex" name="sex">'+[['','—'],['v','Vrouw'],['m','Man'],['x','Anders']].map(o=>'<option value="'+o[0]+'"'+(v.sex===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>')+
+    '<div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="pregnant"'+(v.pregnant?' checked':'')+'> Zwanger</label><label class="check"><input type="checkbox" name="breastfeeding"'+(v.breastfeeding?' checked':'')+'> Geeft borstvoeding</label></div>'+
+    '<div class="field span2"><label for="mem-allergies">Allergieën (gescheiden door komma\'s)</label><input class="inp" id="mem-allergies" name="allergies" value="'+esc(v.allergies||'')+'" placeholder="bv. penicilline, ibuprofen"></div>'+
+    '<div class="field span2"><label for="mem-conditions">Aandoeningen</label><input class="inp" id="mem-conditions" name="conditions" value="'+esc(v.conditions||'')+'" placeholder="bv. astma, hoge bloeddruk, maagzweer"></div>'+
+    '<div class="field span2"><label for="mem-meds">Vaste medicatie</label><textarea class="inp" id="mem-meds" name="meds" rows="2" placeholder="bv. Asaflow 80 mg, 1 per dag">'+esc(v.meds||'')+'</textarea></div></div>'+
+    '<div class="hint">Schrijf geen namen in de vakken onder de naam: die gegevens gaan (zonder naam) naar Gemini.</div>',
+    foot:(m?'<button type="button" class="btn danger" data-act="memDel" data-id="'+esc(m.id)+'">Verwijderen</button><span class="grow"></span>':'')+'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="memSave" data-id="'+esc(m?m.id:'')+'">Opslaan</button>'})};
+A.memSave=d=>{const f=formData($('.modal'));const num=x=>x===''||x==null?null:Number(String(x).replace(',','.'));
+  M.saveMember({id:d.id||'',name:f.name,birth:f.birth||'',age:num(f.age),weight:num(f.weight),sex:f.sex||'',pregnant:!!f.pregnant,breastfeeding:!!f.breastfeeding,allergies:(f.allergies||'').trim(),conditions:(f.conditions||'').trim(),meds:(f.meds||'').trim()});closeModal();toast('Gezinslid opgeslagen.')};
+A.memDel=d=>confirmDlg('Dit gezinslid verwijderen? Geregistreerde innames blijven bewaard.','Verwijderen',()=>{M.deleteMember(d.id);closeModal();toast('Gezinslid verwijderd.')});
+
+/* Wat naar Gemini gaat: nooit een naam. Namen van gezinsleden worden ook uit vrije tekst gefilterd. */
+function scrubNames(s){let t=String(s||'');M.members().forEach(m=>{const n=String(m.name||'').trim();if(n.length>=2)t=t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),'deze persoon')});return t}
+function medPayload(mid,pid,reason,checks){const m=M.memberById(mid),p=M.S.products[pid];const a=M.memberAge(m);const md=p.med||{};const sc=scrubNames;
+  const recent=M.intakesFor(mid,48*3600000).map(x=>({product:sc(x.name),stoffen:x.stoffen||[],eenheden:x.units,urenGeleden:Math.round((Date.now()-Date.parse(x.ts))/360000)/10}));
+  const lf=md.kern||(md.dosering&&md.dosering.length)?Object.assign({},md):null;if(lf){delete lf.naam;delete lf.merk;delete lf.at}
+  return {person:{leeftijdJaar:a?a.years:null,leeftijdMaanden:a&&a.years<3?a.months:null,gewichtKg:m.weight||null,geslacht:m.sex||'',zwanger:!!m.pregnant,borstvoeding:!!m.breastfeeding,allergieen:sc(m.allergies),aandoeningen:sc(m.conditions),vasteMedicatie:sc(m.meds)},
+    productId:pid,product:{naam:sc(p.name),merk:sc(p.brand||''),vorm:md.vorm||'',stoffen:md.stoffen||[],bijsluiter:lf},recent,reason:sc(reason),checks:(checks||[]).map(c=>sc(c.txt))}}
+
+/* Innemen: advies + registratie met één tik */
+let MI=null;
+A.intake=d=>{const mem=M.members();if(!mem.length){A.memEdit({});toast('Voeg eerst een gezinslid toe.');return}
+  const last=LS.get('medMember','');MI={pid:d.id,mid:mem.some(m=>m.id===last)?last:mem[0].id,reason:UI.medQ||'',adv:null,busy:false,err:'',take:false};
+  openModal({title:'Innemen',gid:'dialog-intake',wide:true,body:intakeBody,foot:intakeFoot,onClose:()=>{MI=null}})};
+function miLimits(){const a=MI&&MI.adv;return a?{wachtUren:a.wachtUren,maxPerDag:a.maxPerDag}:null}
+function intakeBody(){const p=M.S.products[MI.pid];if(!p)return '<div class="empty">Dit product bestaat niet meer.</div>';const md=p.med||{};const checks=M.medChecks(MI.mid,MI.pid,miLimits());
+  let h='<div style="font-size:18px;font-weight:600">'+esc(p.name)+'</div><div class="muted small">'+esc((md.stoffen||[]).map(s=>[s.naam,s.sterkte].filter(Boolean).join(' ')).join(', ')||'Werkzame stof onbekend')+'</div>';
+  h+='<div class="seg" role="group" aria-label="Voor wie" style="margin-top:10px">'+M.members().map(m=>'<button type="button" data-act="miWho" data-id="'+esc(m.id)+'" aria-pressed="'+(m.id===MI.mid)+'">'+esc(m.name)+'</button>').join('')+'</div>';
+  h+='<div class="field"><label for="mi-reason">Waarvoor? (optioneel)</label><input class="inp" id="mi-reason" name="reason" value="'+esc(MI.reason)+'" placeholder="bv. hoofdpijn" data-input="miReason"></div>';
+  if(checks.length)h+='<div class="list">'+checks.map(c=>'<div class="item '+(c.sev===2?'lv-red':c.sev===1?'lv-yellow':'')+'">'+(c.sev===2?'⛔ ':c.sev===1?'⚠️ ':'🕘 ')+esc(c.txt)+'</div>').join('')+'</div>';
+  if(md.link)h+='<div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="leaflet" data-id="'+esc(p.id)+'" data-q="inname">📄 Wat zegt de bijsluiter over inname?</button></div>';
+  if(!hasLeaflet(p))h+='<div class="note">De bijsluiter van dit middel staat nog niet in de app. <button type="button" class="btn sm" data-act="leaflet" data-id="'+esc(p.id)+'">📄 Bijsluiter toevoegen</button> Zonder bijsluiter is het advies minder betrouwbaar.</div>';
+  if(MI.busy)h+='<div class="note">Gemini leest de bijsluiter na…</div>';if(MI.err)h+='<div class="note lv-red">'+esc(MI.err)+'</div>';
+  const a=MI.adv;if(a){const v=VERDICT[a.oordeel]||VERDICT.arts;
+    h+='<div class="card '+v[2]+'" data-glean-id="med-advies" style="margin-top:10px"><div style="font-size:17px;font-weight:600">'+v[0]+' '+esc(v[1])+'</div>'+(a.dosis?'<div><b>Dosis:</b> '+esc(a.dosis)+'</div>':'')+
+      '<div class="row small">'+(a.wachtUren?'<span class="tag">Min. '+fmtNum(a.wachtUren)+' u tussen innames</span>':'')+(a.maxPerDag?'<span class="tag">Max. '+fmtNum(a.maxPerDag)+' per 24 u</span>':'')+(a.maxDagen?'<span class="tag">Max. '+fmtNum(a.maxDagen)+' dagen zonder arts</span>':'')+'</div>'+
+      '<p>'+esc(a.samenvatting)+'</p>'+(a.redenen.length?'<ul>'+a.redenen.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+(a.waarschuwingen.length?'<div><b>Let op</b><ul>'+a.waarschuwingen.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'')+
+      (a.bijsluiter.length?'<div class="small"><b>Uit de bijsluiter</b>'+a.bijsluiter.map(x=>'<blockquote>“'+esc(x)+'”</blockquote>').join('')+'</div>':'')+(a.wanneerArts?'<div class="small"><b>Naar de arts als:</b> '+esc(a.wanneerArts)+'</div>':'')+
+      (a.steuntOpBijsluiter?'':'<div class="small lv-yellow">Dit advies steunt niet op de bijsluiter van je eigen doos. Controleer het bij je apotheker.</div>')+'</div>'}
+  if(p.unit==='stuks'||p.unit==='ml')h+='<label class="check" style="margin-top:8px"><input type="checkbox" data-change="miTake"'+(MI.take?' checked':'')+'> Ook '+esc(fmtQty(a&&a.eenheden||1,p.unit))+' uit de voorraad halen</label>';
+  h+='<div class="hint" style="margin-top:8px">'+esc(MED_NOTE)+'</div>';return h}
+function intakeFoot(){const a=MI&&MI.adv;return (medAI()?'<button type="button" class="btn'+(a?'':' primary')+'" data-act="miAdvice"'+(MI.busy?' disabled':'')+'>'+(a?'Opnieuw vragen':'🩺 Advies vragen')+'</button>':'<span class="small muted">Koppel je Google-script voor advies van Gemini.</span>')+
+  '<span class="grow"></span><button type="button" class="btn'+(a?' primary':'')+'" data-act="miTakeNow">✓ Ingenomen</button>'}
+A.miWho=d=>{MI.mid=d.id;MI.adv=null;MI.err='';LS.set('medMember',d.id);paintModal()};
+A.miReason=(d,el)=>{MI.reason=el.value};A.miTake=(d,el)=>{MI.take=!!el.checked};
+A.miAdvice=async()=>{if(!MI||MI.busy)return;const pid=MI.pid,mid=MI.mid;MI.busy=true;MI.err='';paintModal();
+  try{const j=await Sync.call('aiIntake',medPayload(mid,pid,MI.reason,M.medChecks(mid,pid)),null,120000);if(!MI)return;
+    if(!j||!j.ok)throw new Error(j&&j.error||'Geen advies ontvangen.');MI.adv=j.advice;if(j.advice&&j.advice.wanneerArts==null)j.advice.wanneerArts=''}
+  catch(e){if(MI)MI.err=e.message||String(e)}finally{if(MI){MI.busy=false;paintModal()}}};
+A.miTakeNow=()=>{if(!MI)return;const a=MI.adv;const block=(a&&(a.oordeel==='nee'||a.oordeel==='arts'))||M.medChecks(MI.mid,MI.pid,miLimits()).some(c=>c.sev===2);
+  const doIt=()=>{const p=M.S.products[MI.pid];const lot=MI.take?(M.fifoLots(MI.pid).find(l=>M.suitable(l))||M.fifoLots(MI.pid)[0]):null;const units=a&&a.eenheden||1;
+    const x=M.addIntake({memberId:MI.mid,productId:MI.pid,units,dose:a&&a.dosis||'',verdict:a?a.oordeel:'',wachtUren:a&&a.wachtUren||null,maxPerDag:a&&a.maxPerDag||null,lotId:lot&&lot.id,takeQty:lot?Math.min(units,lot.qty):0});
+    const m=M.memberById(x.memberId);LS.set('medMember',x.memberId);closeAllModals();toast('Inname geregistreerd: '+(m?m.name:'')+' · '+p.name+'.')};
+  if(block)confirmDlg('Het advies of de controle raadt deze inname af. Toch registreren (bv. omdat je arts het zo voorschreef)?','Toch registreren',doIt);else doIt()};
+
+/* Bijsluiter: officiële tekst via de vaste link uit de FAGG-geneesmiddelendatabank */
+const DB_URL='https://www.geneesmiddelendatabank.be';
+const hasLeaflet=p=>{const m=(p&&p.med)||{};return !!(m.link||m.kern||(m.dosering&&m.dosering.length))};
+function lfCache(pid){const c=LS.get('lf:'+pid,null);return c&&c.text?c:null}
+function lfSecs(pid){const c=lfCache(pid);if(!c)return null;if(!c._s)c._s=splitLeaflet(c.text);return c._s}
+async function lfEnsure(pid){if(lfCache(pid))return lfCache(pid);const p=M.S.products[pid];if(!p||!p.med||!p.med.link||!medAI())return null;
+  const j=await Sync.call('leafletText',{productId:pid},null,60000);if(j&&j.ok&&j.text){LS.set('lf:'+pid,{text:j.text,at:j.at||todayStr(),url:j.url||''});return lfCache(pid)}return null}
+function fmtLeaflet(t){return esc(t).split('\n').map(l=>/^###\s/.test(l)?'<b>'+l.replace(/^###\s*/,'')+'</b>':l).join('<br>')}
+let LF=null;
+A.leaflet=d=>{const p=M.S.products[d.id];if(!p)return;LF={pid:p.id,busy:false,err:'',imgs:[],url:'',manual:!(p.med&&p.med.link)&&!medAI(),q:'',ans:null,quick:d.q||'',asking:false};
+  openModal({title:'Bijsluiter · '+p.name,gid:'dialog-leaflet',wide:true,body:leafletBody,foot:leafletFoot,onClose:()=>{LF=null}});
+  if(p.med&&p.med.link&&!lfCache(p.id))lfEnsure(p.id).then(()=>{if(LF)paintModal()}).catch(()=>{})};
+function leafletBody(){const p=M.S.products[LF.pid];if(!p)return '<div class="empty">Dit product bestaat niet meer.</div>';const m=p.med||{};const L=(t,a)=>a&&a.length?'<div><b>'+t+'</b><ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'';
+  const secs=lfSecs(p.id);let h='';
+  if(m.link){h+='<div class="note" data-glean-id="lf-status">✓ <b>Officiële bijsluiter</b> · opgehaald op '+esc(fmtDate(m.opgehaald||todayStr()))+(m.onvolledig?' · <span class="lv-yellow">niet alles kon overgenomen worden</span>':'')+
+      '<div class="row" style="margin-top:6px"><button type="button" class="btn sm" data-act="lfRefetch"'+(LF.busy?' disabled':'')+'>↻ Opnieuw ophalen</button><a class="btn sm ghost" href="'+esc(m.link)+'" target="_blank" rel="noopener">Bijsluiter openen</a><button type="button" class="btn sm ghost" data-act="lfNewLink">Andere link</button></div></div>'}
+  if(!m.link||LF.newLink){h+='<div class="card" data-glean-id="lf-link"><b>De officiële bijsluiter koppelen</b> <span class="muted small">(één keer per middel)</span><ol class="small" style="margin:6px 0 8px 18px;padding:0">'+
+      '<li>Open de <a href="'+DB_URL+'" target="_blank" rel="noopener">geneesmiddelendatabank van het FAGG</a> en zoek <b>'+esc(p.name)+'</b>.</li><li>Klik met de rechtermuisknop (op je telefoon: lang drukken) op <b>Bijsluiter</b> › <b>Link kopiëren</b>.</li><li>Plak de link hier en tik op <b>Ophalen en lezen</b>.</li></ol>'+
+      '<div class="row"><input class="inp grow" id="lf-url" name="lfUrl" inputmode="url" placeholder="https://…" value="'+esc(LF.url)+'" data-input="lfUrlIn" aria-label="Link naar de bijsluiter"><button type="button" class="btn primary" data-act="lfFetch"'+(LF.busy||!medAI()?' disabled':'')+'>Ophalen en lezen</button></div>'+
+      (medAI()?'<div class="hint">Je Google-script haalt de bijsluiter op en Gemini neemt hem letterlijk over, verdeeld in de vaste rubrieken. Er gaan geen persoonsgegevens mee. Dit duurt ongeveer een minuut.</div>':'<div class="hint">Koppel eerst je Google-script (Instellingen › Google-synchronisatie). Daarlangs wordt de bijsluiter opgehaald.</div>')+'</div>'}
+  if(LF.busy)h+='<div class="note">'+esc(LF.busy===true?'Bezig…':LF.busy)+'</div>';if(LF.err)h+='<div class="note lv-red">'+esc(LF.err)+'</div>';
+  if(secs){h+='<div class="card" data-glean-id="lf-vraag"><b>Vraag het de bijsluiter</b><div class="row" style="margin-top:6px">'+LEAFLET_QUICK.filter(q=>secs.some(x=>x.nr===q[2])).map(q=>'<button type="button" class="chip" data-act="lfQuick" data-k="'+q[0]+'" aria-pressed="'+(LF.quick===q[0])+'">'+esc(q[1])+'</button>').join('')+'</div>'+
+      '<div class="row" style="margin-top:8px"><input class="inp grow" id="lf-q" name="lfQ" value="'+esc(LF.q)+'" placeholder="Eigen vraag, bv. mag ik dit nemen met ibuprofen?" data-input="lfQIn" data-enter="lfAsk" aria-label="Vraag aan de bijsluiter"><button type="button" class="btn" data-act="lfAsk"'+(LF.asking||!medAI()?' disabled':'')+'>Vragen</button></div>'+
+      '<div class="hint">De knoppen tonen de tekst van de bijsluiter zelf, zonder AI. Een eigen vraag beantwoordt Gemini alleen met de bijsluiter; je vraag en de bijsluiter zijn het enige dat meegaat.</div>';
+    if(LF.quick){const r=leafletQuick(secs,LF.quick);h+='<div class="lf-answer" data-glean-id="lf-antwoord"><div class="eyebrow">Uit rubriek '+esc(r?r.titel:'')+'</div>'+(r&&r.tekst?(r.exact?'':'<div class="small muted">Geen aparte tussentitel gevonden; dit zijn de passages die erover gaan.</div>')+'<div class="lf-text">'+fmtLeaflet(r.tekst)+'</div>':'<div class="empty">De bijsluiter heeft hier geen aparte passage over. Lees de hele rubriek of vraag het aan je apotheker.</div>')+'</div>'}
+    if(LF.asking)h+='<div class="note">Gemini zoekt het antwoord in de bijsluiter…</div>';
+    const a=LF.ans;if(a&&!LF.quick){h+='<div class="lf-answer" data-glean-id="lf-ai-antwoord"><div class="eyebrow">Antwoord uit de bijsluiter</div><p>'+(a.gevonden?'':'ℹ️ ')+esc(a.antwoord)+'</p>'+
+      a.citaten.map(c=>'<blockquote>“'+esc(c.tekst)+'”<div class="small muted">'+esc(c.rubriek||'')+(c.ok?' · ✓ letterlijk in de bijsluiter':' · ⚠ niet letterlijk teruggevonden')+'</div></blockquote>').join('')+
+      (a.geverifieerd?'':'<div class="small lv-yellow">Dit antwoord kon niet letterlijk in de bijsluiter teruggevonden worden. Lees de rubriek zelf na of vraag het aan je apotheker.</div>')+(a.raadpleeg?'<div class="small"><b>Vraag dit ook aan je arts of apotheker.</b></div>':'')+'</div>'}
+    h+='</div>'}
+  else if(m.link&&!LF.busy)h+='<div class="note">De tekst van de bijsluiter wordt geladen…</div>';
+  if(m.onvolledig&&!m.link)h+='<div class="note lv-yellow">Niet alle belangrijke delen stonden op de foto\'s. Fotografeer de ontbrekende kanten of koppel de officiële bijsluiter.</div>';
+  if(m.dosering&&m.dosering.length)h+='<div><b>Dosering (samenvatting)</b><div class="list">'+m.dosering.map(x=>'<div class="item"><div class="grow"><b>'+esc(x.voor||'Iedereen')+'</b>: '+esc(x.dosis)+'<div class="small muted">'+[x.minUren?'min. '+fmtNum(x.minUren)+' u ertussen':'',x.maxPerDag?'max. '+fmtNum(x.maxPerDag)+' '+esc(x.eenheid||'')+' per 24 u':'',x.maxDagen?'max. '+fmtNum(x.maxDagen)+' dagen':''].filter(Boolean).join(' · ')+'</div></div></div>').join('')+'</div></div>';
+  h+=L('Niet gebruiken als',m.nietGebruiken)+L('Voorzichtig als',m.voorzichtig)+L('Wisselwerkingen',m.interacties)+(m.zwangerschap?'<div><b>Zwangerschap en borstvoeding</b><p>'+esc(m.zwangerschap)+'</p></div>':'')+L('Stop en raadpleeg een arts bij',m.ernstigeBijwerkingen);
+  h+='<div style="margin-top:10px"><button type="button" class="btn sm ghost" data-act="lfManual" aria-expanded="'+!!LF.manual+'">'+(LF.manual?'▾':'▸')+' Geen link? Foto\'s maken of zelf invullen</button></div>';
+  if(LF.manual){h+='<div class="row" style="margin-top:6px"><label class="btn" style="cursor:pointer">📷 Foto\'s van bijsluiter of doos<input type="file" accept="image/*" multiple hidden data-change="lfPhotos"></label>'+(LF.imgs.length?'<span class="tag">'+LF.imgs.length+' foto'+(LF.imgs.length>1?'\'s':'')+'</span><button type="button" class="btn primary" data-act="lfRead"'+(LF.busy||!medAI()?' disabled':'')+'>Lezen met Gemini</button>':'')+'</div>'+
+      '<div class="hint">Alleen als het middel niet in de databank staat of je geen internet hebt. Tot 4 foto\'s; ze worden niet bewaard.</div>'+
+      '<div class="grid2" style="margin-top:10px"><div class="field span2"><label for="lf-stoffen">Werkzame stoffen (bv. paracetamol 500 mg; cafeïne 65 mg)</label><input class="inp" id="lf-stoffen" name="stoffen" value="'+esc((m.stoffen||[]).map(s=>[s.naam,s.sterkte].filter(Boolean).join(' ')).join('; '))+'"></div>'+
+      '<div class="field span2"><label for="lf-ind">Waarvoor (komma\'s)</label><input class="inp" id="lf-ind" name="indicaties" value="'+esc((m.indicaties||[]).join(', '))+'"></div>'+
+      '<div class="field span2"><label for="lf-kern">Tekst uit de bijsluiter (dosering, wanneer niet gebruiken, wisselwerkingen)</label><textarea class="inp" id="lf-kern" name="kern" rows="5">'+esc(m.kern||'')+'</textarea></div>'+
+      '<label class="check"><input type="checkbox" name="voorschrift"'+(m.voorschrift?' checked':'')+'> Op voorschrift</label></div>'}
+  h+='<div class="hint" style="margin-top:8px">'+esc(MED_NOTE)+'</div>';return h}
+function leafletFoot(){return '<button type="button" class="btn" data-act="closeModal">Sluiten</button>'+(LF&&LF.manual?'<button type="button" class="btn primary" data-act="lfSave">Opslaan</button>':'')}
+A.lfUrlIn=(d,el)=>{if(LF)LF.url=el.value.trim()};A.lfQIn=(d,el)=>{if(LF)LF.q=el.value};
+A.lfManual=()=>{LF.manual=!LF.manual;paintModal()};A.lfNewLink=()=>{LF.newLink=!LF.newLink;paintModal()};
+A.lfQuick=d=>{LF.quick=LF.quick===d.k?'':d.k;paintModal()};
+A.lfRefetch=()=>{const p=M.S.products[LF.pid];LF.url=p.med.link;return A.lfFetch()};
+A.lfFetch=async()=>{if(!LF||LF.busy)return;const el=$('#lf-url');if(el&&el.value.trim())LF.url=el.value.trim();const url=LF.url,pid=LF.pid;
+  if(!/^https:\/\//i.test(url))throw new Error('Plak de volledige link naar de bijsluiter (begint met https://).');
+  LF.busy='De bijsluiter wordt opgehaald en letterlijk overgenomen. Dit duurt ongeveer een minuut…';LF.err='';paintModal();
+  try{const j=await Sync.call('leafletFetch',{productId:pid,url},null,330000);if(!j||!j.ok)throw new Error(j&&j.error||'Geen antwoord.');
+    LS.set('lf:'+pid,{text:j.text,at:todayStr(),url:j.url||url});const old=(M.S.products[pid]||{}).med||{};
+    applyLeaflet(pid,Object.assign({},old,j.med,{link:url,bron:'link',opgehaald:todayStr(),onvolledig:!!j.partial}));
+    if(LF){LF.newLink=false;LF.quick='inname'}toast('Bijsluiter opgehaald'+(j.partial?' (niet helemaal volledig)':'')+'.')}
+  catch(e){if(LF)LF.err=e.message||String(e)}finally{if(LF){LF.busy=false;paintModal()}}};
+A.lfAsk=async()=>{if(!LF||LF.asking)return;const el=$('#lf-q');if(el&&el.value.trim())LF.q=el.value;const q=scrubNames(LF.q).trim();if(!q)throw new Error('Typ een vraag.');
+  LF.asking=true;LF.err='';LF.quick='';LF.ans=null;paintModal();const pid=LF.pid;
+  try{const j=await Sync.call('aiAsk',{productId:pid,question:q},null,120000);if(!j||!j.ok)throw new Error(j&&j.error||'Geen antwoord.');if(LF)LF.ans=j.answer}
+  catch(e){if(LF)LF.err=e.message||String(e)}finally{if(LF){LF.asking=false;paintModal()}}};
+A.lfPhotos=async(d,el)=>{const fs=Array.from(el.files||[]).slice(0,4-LF.imgs.length);el.value='';for(const f of fs){const r=await resizeImage(f,1800,0.82);LF.imgs.push(String(r.dataUrl).split(',')[1]||'')}paintModal()};
+function parseSubstances(s){return String(s||'').split(/;|\n/).map(x=>x.trim()).filter(Boolean).map(x=>{const m=x.match(/^(.*?)\s+(\d[\d.,]*\s*(?:mg|g|µg|mcg|ie|iu|ml|%)(?:\s*\/\s*\d*\s*\w+)?)$/i);return m?{naam:m[1].trim(),sterkte:m[2].trim()}:{naam:x,sterkte:''}}).slice(0,8)}
+function applyLeaflet(pid,med){const p=M.S.products[pid];const patch={id:pid,med:Object.assign({},med,{at:todayStr()})};
+  if(med.naOpeningDagen&&(!(Number(p.openShelfDays)>0)||M.openShelfSrc(p)==='geschat'))Object.assign(patch,{openShelfDays:med.naOpeningDagen,openShelfSrc:'etiket',openShelfNote:'Bijsluiter',openShelfAt:todayStr()});
+  if(!p.category)Object.assign(patch,{category:'Geneesmiddelen'});M.saveProduct(patch)}
+A.lfRead=async()=>{if(!LF||LF.busy||!LF.imgs.length)return;const pid=LF.pid;LF.busy=true;LF.err='';paintModal();
+  try{const j=await Sync.call('aiLeaflet',{images:LF.imgs},null,150000);if(!j||!j.ok)throw new Error(j&&j.error||'Geen antwoord.');if(!LF)return;
+    const old=(M.S.products[pid]||{}).med||{};const med=Object.assign({},old,j.med);if(!j.med.kern&&old.kern)med.kern=old.kern;applyLeaflet(pid,med);LF.imgs=[];toast('Bijsluiter gelezen. Controleer de gegevens.')}
+  catch(e){if(LF)LF.err=e.message||String(e)}finally{if(LF){LF.busy=false;paintModal()}}};
+A.lfSave=()=>{const f=formData($('.modal'));const p=M.S.products[LF.pid];const med=Object.assign({},p.med||{},{stoffen:parseSubstances(f.stoffen),indicaties:String(f.indicaties||'').split(',').map(x=>x.trim()).filter(Boolean).slice(0,12),kern:String(f.kern||'').slice(0,4000),voorschrift:!!f.voorschrift});
+  applyLeaflet(LF.pid,med);closeModal();toast('Bijsluiter opgeslagen.')};
+function medSection(p){const m=p.med||{};return '<div class="row" style="margin:8px 0"><button type="button" class="btn" data-act="leaflet" data-id="'+esc(p.id)+'">📄 Bijsluiter'+(m.kern||(m.dosering&&m.dosering.length)?'':' toevoegen')+'</button><button type="button" class="btn primary" data-act="intake" data-id="'+esc(p.id)+'">💊 Innemen</button></div>'}
 
 /* ===================== TELEFOON ALS SCANNER VOOR DE TABLET =====================
  * Tablet ("host") opent een korte scankoppeling via je eigen Google-script; de telefoon stuurt barcodes en
@@ -2698,7 +3082,7 @@ const SET_TABS=[['algemeen','Huishouden'],['houdbaarheid','Houdbaarheid'],['meld
 VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.settingsTab=tab;const st=M.settings();
   let h='<div class="tabs" role="tablist">'+SET_TABS.map(t=>'<button type="button" class="tab" role="tab" id="stab-'+t[0]+'" aria-controls="spanel-'+t[0]+'" aria-selected="'+(tab===t[0])+'" data-act="setTab" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div role="tabpanel" id="spanel-'+tab+'" aria-labelledby="stab-'+tab+'" data-glean-id="set-'+tab+'" style="max-width:860px">';
   const num=(path,v,min,max)=>'<input class="inp" type="number" min="'+min+'" max="'+max+'" value="'+esc(v)+'" data-change="setNum" data-path="'+path+'" style="max-width:120px">';
-  if(tab==='algemeen'){h+=themeSection()+a11ySection()+installSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div></div>'+householdSection()+'</div>';
+  if(tab==='algemeen'){h+=themeSection()+a11ySection()+installSection()+'<div class="section"><h3>Huishouden</h3><div class="grid2"><div class="field"><label>Naam</label><input class="inp" value="'+esc(st.household)+'" data-change="setStr" data-path="household"></div></div>'+householdSection()+'</div>'+'<div class="section" data-glean-id="set-dom-order"><h3>Volgorde van de voorraden</h3><p class="muted small" style="margin-top:0">Zo staan Keuken, Badkamer, Medicijnkast en Huishouden bovenaan de schermen.</p>'+domOrderList()+'<div class="row" style="margin-top:8px"><button type="button" class="btn sm ghost" data-act="domReset">Standaardvolgorde</button></div></div>';
     h+='<div class="section"><h3>Gebruikers</h3><p class="muted small" style="margin-top:0">Iedere handeling in de geschiedenis wordt bewaard met de naam van de gebruiker. '+(Store.mode==='yjs'?'Je gebruikt de gedeelde Glean-opslag: iedereen met wie je deze app deelt, ziet en bewerkt dezelfde voorraad in realtime.':'De gegevens staan op dit toestel. Wil je met meerdere toestellen tegelijk werken, open de app dan via Glean (gedeeld) of zet een back-up over.')+'</p><div class="row">'+st.users.map(u=>'<span class="chip" aria-pressed="'+(u===M.getUser())+'">'+esc(u)+(st.users.length>1?' <a href="#" data-act="delUser" data-u="'+esc(u)+'" aria-label="Verwijder '+esc(u)+'">✕</a>':'')+'</span>').join('')+'</div><div class="row" style="margin-top:10px"><input id="new-user" class="inp" style="max-width:220px" placeholder="Naam gezinslid" data-enter="addUser"><button type="button" class="btn" data-act="addUser">Toevoegen</button></div></div>'}
   if(tab==='gezondheid')h+=healthSettings(st);
   if(tab==='houdbaarheid'){const t=st.thresholds;h+='<div class="section"><h3>Waarschuwingstermijnen</h3><div class="stack"><div class="row"><span class="tag lv-expired" style="width:140px">Vervallen</span><span class="muted small">datum voorbij</span></div><div class="row"><span class="tag lv-red" style="width:140px">Rood/oranje</span>0 tot '+num('thresholds.red',t.red,0,30)+' dagen</div><div class="row"><span class="tag lv-orange" style="width:140px">Oranje</span>tot '+num('thresholds.orange',t.orange,1,60)+' dagen</div><div class="row"><span class="tag lv-yellow" style="width:140px">Geel</span>tot '+num('thresholds.yellow',t.yellow,1,120)+' dagen</div><div class="row"><span class="tag lv-ok" style="width:140px">Normaal</span><span class="muted small">daarna</span></div></div></div>';
