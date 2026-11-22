@@ -429,6 +429,7 @@ blockquote{margin:6px 0;padding:4px 10px;border-left:3px solid var(--md-sys-colo
 .rec-pick.on{background:color-mix(in srgb,var(--md-sys-color-primary) 10%,transparent)}
 .rec-sel-bar{position:sticky;top:0;z-index:3;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);padding:8px 0;flex-wrap:wrap}
 details.card>summary{cursor:pointer}
+@media screen and (min-width:1101px){.stats.s4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -1401,15 +1402,18 @@ function usageTip(x,recMap){const p=x.p,e=x.e,l=x.l;
 function recipeMapForLots(){const map={};M.suggestRecipes({},0).forEach(ev=>{if(ev.haveFrac<0.5)return;ev.urgentUses.forEach(u=>{if(!map[u.lotId])map[u.lotId]=ev.recipe})});return map}
 
 /* ---------- DASHBOARD ---------- */
-VIEW_RENDER.dashboard=function(){const lots=M.lots();const prods=new Set(lots.map(l=>l.productId));const uf=M.useFirst();const soonN=uf.filter(x=>x.e.level!=='expired').length,expN=uf.filter(x=>x.e.level==='expired').length;
-  const low=M.lowStock();const shop=Object.values(M.S.shopping);const recMap=recipeMapForLots();
+/* Wat het dashboard toont per voorraad: "Eerst opgebruiken" en recepten zijn voor voeding (en verzorging); geneesmiddelen krijgen alleen een vervalwaarschuwing; huishouden geen van beide. */
+function dashKind(){const d=UI.dom||'';return {food:d===''||d==='keuken',useFirst:d===''||d==='keuken'||d==='badkamer',med:d===''||d==='medicijnen',expiry:d!=='huishouden'}}
+VIEW_RENDER.dashboard=function(){const K=dashKind();const lots=M.lots();const prods=new Set(lots.map(l=>l.productId));const ufAll=M.useFirst();const uf=ufAll.filter(x=>{const d=M.productDomain(x.p);return K.useFirst&&d!=='medicijnen'&&d!=='huishouden'});
+  const medExp=K.med?ufAll.filter(x=>M.productDomain(x.p)==='medicijnen'):[];const expSrc=ufAll.filter(x=>M.productDomain(x.p)!=='huishouden');const soonN=expSrc.filter(x=>x.e.level!=='expired').length,expN=expSrc.filter(x=>x.e.level==='expired').length;
+  const low=M.lowStock();const shop=Object.values(M.S.shopping);const recMap=K.food?recipeMapForLots():{};
   const stat=(id,v,l,view,alert,extra)=>'<button type="button" class="stat'+(alert?' alert':'')+'" data-glean-id="kpi-'+id+'" data-act="go" data-view="'+view+'"'+(extra||'')+'><div class="v">'+v+'</div><div class="l">'+l+'</div></button>';
-  let h='<div class="stats">'+stat('items',lots.length,'Producten in huis <span class="muted">(partijen)</span>','voorraad')+stat('soorten',prods.size,'Verschillende productsoorten','voorraad')+
-    stat('bijna-vervallen',soonN+(expN?' <span class="small" style="font-size:14px">+'+expN+' vervallen</span>':''),'Bijna vervallen (≤ '+M.settings().useFirstDays+' d)','vervaldata',soonN+expN>0)+
+  let h='<div class="stats'+(K.expiry?'':' s4')+'">'+stat('items',lots.length,'Producten in huis <span class="muted">(partijen)</span>','voorraad')+stat('soorten',prods.size,'Verschillende productsoorten','voorraad')+
+    (K.expiry?stat('bijna-vervallen',soonN+(expN?' <span class="small" style="font-size:14px">+'+expN+' vervallen</span>':''),'Bijna vervallen (≤ '+M.settings().useFirstDays+' d)','vervaldata',soonN+expN>0):'')+
     stat('onder-minimum',low.length,'Onder minimumvoorraad','voorraad',low.length>0,' data-pstatus="laag"')+stat('boodschappen',shop.length,'Op boodschappenlijst','boodschappen')+'</div>';
   h+='<div class="dash">';
-  // Eerst opgebruiken
-  h+='<section class="card focus-card c7" data-glean-id="dash-eerst-opgebruiken"><div class="row between"><h2 class="panel-title">Eerst opgebruiken – vervaldatum nadert</h2><button type="button" class="btn sm ghost" data-act="go" data-view="vervaldata">Alles →</button></div>';
+  // Eerst opgebruiken (voeding en verzorging)
+  if(K.useFirst){h+='<section class="card focus-card '+(K.food?'c7':'c12')+'" data-glean-id="dash-eerst-opgebruiken"><div class="row between"><h2 class="panel-title">Eerst opgebruiken – vervaldatum nadert</h2><button type="button" class="btn sm ghost" data-act="go" data-view="vervaldata">Alles →</button></div>';
   if(!uf.length)h+='<div class="empty">Niets dringend. Producten die binnen '+M.settings().useFirstDays+' dagen vervallen verschijnen hier automatisch.</div>';
   else{h+='<div class="list">';uf.slice(0,10).forEach(x=>{const tip=usageTip(x,recMap);const w=M.expiryWarning(x.e,M.isFreezer(x.l.locationId));
     h+='<div class="li bar-'+x.e.level+'" data-glean-id="uf-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(fmtQty(x.l.qty,x.l.unit))+' · '+esc(M.locName(x.l.locationId))+' · '+typeTag(x.e)+' '+fmtDate(x.e.date)+'</div>'+
@@ -1417,12 +1421,17 @@ VIEW_RENDER.dashboard=function(){const lots=M.lots();const prods=new Set(lots.ma
       '<div class="warn-txt muted">💡 '+(tip.rid?'<a href="#" data-act="recipe" data-id="'+esc(tip.rid)+'">'+esc(tip.txt)+'</a>':esc(tip.txt))+'</div></div><div class="acts">'+
       (tip.tgt?'<button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(x.l.id)+'">Weggooien</button>':'<button type="button" class="btn sm primary" data-act="useUpLot" data-id="'+esc(x.l.id)+'">✓ Opgebruikt</button><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(x.l.id)+'">Deel</button>'+(tip.freeze?'<button type="button" class="btn sm" data-act="freezeLot" data-id="'+esc(x.l.id)+'">❄ Invriezen</button>':''))+'</div></div>'});
     if(uf.length>10)h+='<div class="small muted" style="padding:8px 10px">+ '+(uf.length-10)+' andere — zie Vervaldatums</div>';h+='</div>'}
-  h+='</section>';
+  h+='</section>'}
   // Wat kan ik maken
-  const recs=M.suggestRecipes({minHave:0.5},4);
+  if(K.food){const recs=M.suggestRecipes({minHave:0.5},4);
   h+='<section class="card c5" data-glean-id="dash-wat-kan-ik-maken"><div class="row between"><h2 class="panel-title">Wat kan ik maken met mijn voorraad?</h2><button type="button" class="btn sm ghost" data-act="go" data-view="recepten">Alle →</button></div>';
   if(!recs.length)h+='<div class="empty">Voeg producten toe om receptvoorstellen te krijgen.</div>';else{h+='<div class="list">';recs.forEach(ev=>{h+=recipeRow(ev)});h+='</div>'}
-  h+='</section>';
+  h+='</section>';}
+  // Medicijnkast: alleen een waarschuwing als er een doos vervallen is of bijna vervalt (niet "opgebruiken")
+  if(medExp.length){h+='<section class="card c12" data-glean-id="dash-med-vervallen"><div class="row between"><h2 class="panel-title">💊 Vervaldatum geneesmiddelen</h2><button type="button" class="btn sm ghost" data-act="go" data-view="medicijnen">Medicijnkast →</button></div><div class="list">';
+    medExp.slice(0,6).forEach(x=>{h+='<div class="li bar-'+x.e.level+'" data-glean-id="medexp-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(M.locName(x.l.locationId))+' · '+(x.e.level==='expired'?'vervallen sinds ':'vervalt op ')+fmtDate(x.e.date)+'</div>'+
+      (x.e.level==='expired'?'<div class="warn-txt">⚠ Niet meer gebruiken. Breng het terug naar de apotheek.</div>':'')+'</div><div class="acts">'+(x.e.level==='expired'?'<button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(x.l.id)+'">Weggedaan</button>':'')+'</div></div>'});
+    if(medExp.length>6)h+='<div class="small muted" style="padding:8px 10px">+ '+(medExp.length-6)+' andere — zie de Medicijnkast</div>';h+='</div></section>'}
   // Bijna op
   h+='<section class="card c4" data-glean-id="dash-bijna-op"><div class="row between"><h2 class="panel-title">Bijna op</h2><button type="button" class="btn sm ghost" data-act="go" data-view="voorraad" data-pstatus="laag">Alle →</button></div>';
   if(!low.length)h+='<div class="empty">Alles boven de minimumvoorraad.</div>';else{h+='<div class="list">';low.slice(0,8).forEach(x=>{const on=M.openShoppingFor(x.p.id);
@@ -1439,7 +1448,7 @@ VIEW_RENDER.dashboard=function(){const lots=M.lots();const prods=new Set(lots.ma
   if(!recent.length)h+='<div class="empty">Nog niets geregistreerd. Gebruik de scanknop.</div>';else{h+='<div class="list">';recent.forEach(l=>{const p=M.S.products[l.productId];if(!p)return;h+='<div class="li" data-glean-id="recent-'+esc(l.id)+'">'+thumb(p)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(p.id)+'">'+esc(p.name)+'</div><div class="sub-t">'+esc(fmtQty(l.qty,l.unit))+' · '+esc(M.locName(l.locationId))+' · '+esc((l.createdAt||'').slice(0,10).split('-').reverse().join('/'))+'</div></div></div>'});h+='</div>'}
   h+='</section>';
   // Vandaag op het menu
-  const t=todayStr();const todays=M.MEALS.map(m=>M.S.plan[M.planKey(t,m)]).filter(Boolean);
+  const t=todayStr();const todays=K.food?M.MEALS.map(m=>M.S.plan[M.planKey(t,m)]).filter(Boolean):[];
   if(todays.length){h+='<section class="card c12" data-glean-id="dash-menu-vandaag"><div class="row between"><h2 class="panel-title">Vandaag op het menu</h2><button type="button" class="btn sm ghost" data-act="recTab" data-tab="week">Weekmenu →</button></div><div class="row">';
     todays.forEach(e=>{const r=M.recipeById(e.recipeId);if(r)h+='<button type="button" class="chip" data-act="recipe" data-id="'+esc(r.id)+'" data-plan="'+esc(e.id)+'">'+esc(r.emoji||'🍽️')+' '+esc(e.meal)+': '+esc(r.name)+(e.cooked?' ✓':'')+'</button>'});h+='</div></section>'}
   // Opslagplaatsen
@@ -2593,7 +2602,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.3 · 22-11-2026';
+const APP_VERSION='3.4 · 22-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -3203,7 +3212,16 @@ function buildNav(){$('#nav-side').innerHTML=VIEWS.filter(v=>v[0]!=='scanner').m
 A.moreNav=()=>openModal({title:'Menu',gid:'dialog-menu',body:'<div class="list">'+VIEWS.map(v=>'<button type="button" class="nav-btn" data-act="navFromMenu" data-view="'+v[0]+'">'+ico(v[3],v[2])+esc(v[1])+'</button>').join('')+'</div>'});
 A.navFromMenu=d=>{closeModal();go(d.view)};
 A.gsearch=(d,el)=>{UI.inv.q=el.value;UI.inv.status='';el.value='';go('voorraad')};
-const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner()+a11yBar();if(!M.products().length)h+='<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng je voorraad in kaart</h2><p class="muted" style="margin:0 0 12px">Scan producten met de camera, fotografeer etiketten of voer ze manueel in. Je 8 opslagplaatsen staan al klaar.</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>';return h+_dash()};
+/* Welkomstkaart: tekst en aantal bewaarplaatsen volgen de gekozen voorraad (M.locations() is al gefilterd tijdens het tekenen) */
+const WELCOME={'':['je voorraad','Scan producten met de camera, fotografeer etiketten of voer ze manueel in.'],
+  keuken:['je keuken','Scan voeding met de camera, fotografeer etiketten of voer ze manueel in.'],
+  badkamer:['je badkamer','Scan shampoo, tandpasta en andere verzorging met de camera, of voer ze manueel in.'],
+  medicijnen:['je medicijnkast','Scan de vierkante code op de doos: de vervaldatum en het lotnummer komen er meteen bij. Koppel daarna de bijsluiter.'],
+  huishouden:['je huishoudvoorraad','Scan wasmiddel, vaatwastabletten en schoonmaakmiddelen, of voer ze manueel in. Met een minimumvoorraad komen ze vanzelf op je boodschappenlijst.']};
+function welcomeCard(){const d=WELCOME[UI.dom]?UI.dom:'';const w=WELCOME[d];const n=M.locations().length;const where=d?' '+(d==='medicijnen'?'voor de medicijnkast':d==='huishouden'?'voor het huishouden':'in de '+domainLabel(d).toLowerCase()):'';
+  const locs=n?(n===1?'Je opslagplaats'+where+' staat al klaar.':'Je '+n+' opslagplaatsen'+where+' staan al klaar.'):'Maak eerst een opslagplaats aan bij Opslagplaatsen.';
+  return '<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng '+esc(w[0])+' in kaart</h2><p class="muted" style="margin:0 0 12px">'+esc(w[1]+' '+locs)+'</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>'}
+const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner()+a11yBar();if(!M.products().length)h+=welcomeCard();return h+_dash()};
 function start(){try{Theme.apply();Theme.watch()}catch(e){}try{A11y.apply();ToTop.init()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
