@@ -1065,9 +1065,9 @@ function createModel(adapter,hooks){hooks=hooks||{};
      Geeft alles terug wat nodig is om het ongedaan te maken. */
   function planUses(ids){const set=new Set(ids),today=todayStr();return Object.values(S.plan).filter(e=>set.has(e.recipeId)&&!e.cooked&&e.date>=today)}
   function removeRecipes(ids){ids=[...new Set(ids||[])];const own=ids.filter(id=>S.recipes[id]),built=ids.filter(id=>!S.recipes[id]&&BUILTIN_RECIPES.some(r=>r.id===id));
-    const undo={recipes:own.map(id=>clone(S.recipes[id])),plan:planUses(own).map(clone),hidden:clone(state().hiddenRecipes||{})};
+    const undo={recipes:own.map(id=>clone(S.recipes[id])),plan:planUses(own.concat(built)).map(clone),hidden:clone(state().hiddenRecipes||{})};
     tx(()=>{undo.plan.forEach(e=>del('plan',e.id));own.forEach(id=>del('recipes',id));if(built.length){const h=Object.assign({},state().hiddenRecipes||{});built.forEach(id=>h[id]=true);saveState({hiddenRecipes:h})}});
-    return {deleted:own.length,hidden:built.length,undo}}
+    return {deleted:own.length,hidden:built.length,unplanned:undo.plan.length,undo}}
   function restoreRecipes(u){if(!u)return;tx(()=>{u.recipes.forEach(r=>{if(!S.recipes[r.id])put('recipes',r)});u.plan.forEach(e=>{if(!S.plan[e.id])put('plan',e)});saveState({hiddenRecipes:u.hidden})})}
   /* Volgorde van de voorraden bovenaan (gedeeld via de instellingen). Onbekende of nieuwe voorraden komen achteraan in de standaardvolgorde. */
   function domainOrder(){const want=Array.isArray(settings().domOrder)?settings().domOrder:[];const ids=DOMAINS.map(d=>d[0]);const o=want.filter((x,i)=>ids.includes(x)&&want.indexOf(x)===i);ids.forEach(x=>{if(!o.includes(x))o.push(x)});return o}
@@ -2310,7 +2310,7 @@ VIEW_RENDER.recepten=function(){const tab=UI.params.tab||UI.rec.tab;UI.rec.tab=t
   h+=tab==='week'?weekView():tab==='mijn'?myRecipes():suggestView();return h+'</div>'};
 A.recTab=d=>{UI.rec.tab=d.tab;if(d.tab!=='mijn')UI.rec.sel=null;go('recepten',{tab:d.tab})};
 function filterChips(f,act){return REC_FILTERS.map(x=>'<button type="button" class="chip" aria-pressed="'+!!f[x[0]]+'" data-act="'+act+'" data-k="'+x[0]+'">'+x[1]+'</button>').join('')}
-function suggestView(){const f=UI.rec.f;let h='<div class="toolbar"><input id="rec-q" class="inp" style="max-width:240px" placeholder="Zoek gerecht…" value="'+esc(UI.rec.q)+'" data-input="recQ"><select class="inp" style="max-width:170px" data-change="recMeal">'+sel(UI.rec.meal,[['','Alle maaltijden'],['ontbijt','Ontbijt'],['lunch','Lunch'],['avond','Avondmaal']])+'</select>'+filterChips(f,'recF')+'</div>';
+function suggestView(){const f=UI.rec.f;let h='<div class="toolbar"><input id="rec-q" class="inp" style="max-width:240px" placeholder="Zoek gerecht…" value="'+esc(UI.rec.q)+'" data-input="recQ"><select class="inp" style="max-width:170px" data-change="recMeal">'+sel(UI.rec.meal,[['','Alle maaltijden'],['ontbijt','Ontbijt'],['lunch','Lunch'],['avond','Avondmaal']])+'</select>'+filterChips(f,'recF')+'<span class="grow"></span><button type="button" class="btn ghost" data-act="recCleanup" data-glean-id="rec-cleanup">🧹 Recepten opruimen</button></div>';
   h+=aiBanner();
   const evs=M.suggestRecipes(Object.assign({},f,{meal:UI.rec.meal,q:UI.rec.q}));
   if(!evs.length)return h+'<div class="card empty">Geen recepten voor deze filters.</div>';
@@ -2351,7 +2351,7 @@ A.planOk=d=>{const dt=$('#pl-d').value,m=$('#pl-m').value;M.setPlan(dt,m,d.id,RS
 
 /* ---------- Weekplanner ---------- */
 function weekView(){const ws=weekStart();const ew=M.evalWeek(ws);const miss=M.weekMissing(ws);const t=todayStr();const dates=M.weekDates(ws);
-  let h='<div class="toolbar"><button type="button" class="btn" data-act="wkNav" data-d="-7" aria-label="Vorige week">‹</button><b>Week '+fmtDate(ws).slice(0,5)+' – '+fmtDate(dates[6]).slice(0,5)+'</b><button type="button" class="btn" data-act="wkNav" data-d="7" aria-label="Volgende week">›</button><button type="button" class="btn ghost" data-act="wkNav" data-d="0">Deze week</button><span class="grow"></span><button type="button" class="btn" data-act="wkMissing" '+(miss.length?'':'disabled')+'>🛒 Ontbrekende → lijst ('+miss.length+')</button><button type="button" class="btn ghost" data-act="wkClear">Week leegmaken</button><button type="button" class="btn primary" data-act="wkGen">✨ Genereer mijn weekmenu</button></div>';
+  let h='<div class="toolbar"><button type="button" class="btn" data-act="wkNav" data-d="-7" aria-label="Vorige week">‹</button><b>Week '+fmtDate(ws).slice(0,5)+' – '+fmtDate(dates[6]).slice(0,5)+'</b><button type="button" class="btn" data-act="wkNav" data-d="7" aria-label="Volgende week">›</button><button type="button" class="btn ghost" data-act="wkNav" data-d="0">Deze week</button><span class="grow"></span><button type="button" class="btn" data-act="wkMissing" '+(miss.length?'':'disabled')+'>🛒 Ontbrekende → lijst ('+miss.length+')</button><button type="button" class="btn ghost" data-act="wkClear">Week leegmaken</button><button type="button" class="btn ghost" data-act="recCleanup" data-glean-id="wk-rec-cleanup">🧹 Recepten opruimen</button><button type="button" class="btn primary" data-act="wkGen">✨ Genereer mijn weekmenu</button></div>';
   const allUrg=new Set();Object.values(ew).forEach(x=>x.ev&&x.ev.urgentUses.forEach(u=>allUrg.add(u.lotId)));const ufAll=M.useFirst().filter(x=>x.e.level!=='expired'||x.e.type!=='TGT');const unplanned=ufAll.filter(x=>!allUrg.has(x.l.id));
   if(ufAll.length)h+='<div class="note'+(unplanned.length?' warn':'')+'" style="margin-bottom:12px">♻ '+(unplanned.length?'Nog niet ingepland en bijna vervallen: '+unplanned.slice(0,6).map(x=>'<b>'+esc(x.p.name)+'</b> ('+(x.e.days<0?'vervallen':x.e.days+' d')+')').join(', ')+'. "Genereer" geeft deze voorrang.':'Alle bijna vervallen producten zitten in je weekmenu. 👍')+'</div>';
   h+='<div class="week"><div class="wh"></div>'+M.MEALS.map(m=>'<div class="wh">'+MEAL_LABEL[m]+'</div>').join('');
@@ -2395,28 +2395,37 @@ function myRecipes(){const mine=Object.values(M.S.recipes).sort((a,b)=>a.name.lo
   if(hidden.length)h+='<div class="card" style="margin-top:14px" data-glean-id="hidden-recipes"><div class="row between"><h2 class="panel-title">Verborgen ingebouwde recepten</h2>'+(hidden.length>1?'<button type="button" class="btn sm ghost" data-act="unhideAll">↺ Alles terugzetten</button>':'')+'</div><div class="row">'+hidden.map(r=>'<button type="button" class="chip" data-act="unhideRecipe" data-id="'+esc(r.id)+'">↺ '+esc(r.name)+'</button>').join('')+'</div></div>';return h}
 function recSub(r){return (r.ing||[]).length+' ingrediënten · ⏱ '+r.time+' min · '+(r.meals||[]).map(m=>MEAL_LABEL[m]).join(', ')+(r.source==='gemini'?' · ✨ AI':'')}
 /* Selectiemodus: eigen recepten verwijderen, ingebouwde verbergen — in één keer, met ongedaan maken */
-function selectView(mine){const sel=UI.rec.sel,ids=sel.ids;const built=BUILTIN_RECIPES.filter(r=>!(M.state().hiddenRecipes||{})[r.id]).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
+function builtMatch(r,q){if(!q)return true;return norm([r.name,(r.tags||[]).join(' '),(r.ing||[]).map(i=>i.n).join(' '),r.main||''].join(' ')).includes(q)}
+function selectView(mine){const sel=UI.rec.sel,ids=sel.ids;const built=BUILTIN_RECIPES.filter(r=>!(M.state().hiddenRecipes||{})[r.id]).sort((a,b)=>a.name.localeCompare(b.name,'nl'));const bq=norm(sel.bq||'');const shown=built.filter(r=>builtMatch(r,bq));
   const nOwn=mine.filter(r=>ids[r.id]).length,nBuilt=built.filter(r=>ids[r.id]).length,n=nOwn+nBuilt,ai=mine.filter(r=>r.source==='gemini');
   const row=(r,own)=>'<label class="li check rec-pick'+(ids[r.id]?' on':'')+'" data-glean-id="rec-pick-'+esc(r.id)+'"><input type="checkbox" data-change="recSelToggle" data-id="'+esc(r.id)+'"'+(ids[r.id]?' checked':'')+'><div class="thumb" aria-hidden="true">'+esc(r.emoji||'🍽️')+'</div><div class="grow"><div class="main-t">'+esc(r.name)+'</div><div class="sub-t">'+recSub(r)+(own?'':' · ingebouwd')+'</div></div></label>';
   let h='<div class="toolbar rec-sel-bar" data-glean-id="rec-select-bar"><b class="grow" aria-live="polite">'+(n?n+' geselecteerd':'Kies de recepten')+'</b>'+
-    (mine.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="own">Alle eigen recepten</button>':'')+(ai.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="ai">Alle ✨ AI-recepten ('+ai.length+')</button>':'')+
+    (mine.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="own">Alle eigen recepten</button>':'')+(ai.length?'<button type="button" class="btn sm" data-act="recSelAll" data-k="ai">Alle ✨ AI-recepten ('+ai.length+')</button>':'')+(built.length?'<button type="button" class="btn sm" data-act="recSelBuilt" data-k="all" data-glean-id="rec-sel-built-all">Alle ingebouwde ('+built.length+')</button>':'')+
     (n?'<button type="button" class="btn sm ghost" data-act="recSelNone">Niets</button>':'')+
     '<button type="button" class="btn sm danger" data-act="recSelDel"'+(n?'':' disabled')+'>🗑 '+(nBuilt&&!nOwn?'Verbergen':'Verwijderen')+(n?' ('+n+')':'')+'</button><button type="button" class="btn sm" data-act="recSelOff">Klaar</button></div>';
   h+='<div class="card" data-glean-id="rec-select-own"><h2 class="panel-title">Eigen recepten</h2>'+(mine.length?'<div class="list">'+mine.map(r=>row(r,true)).join('')+'</div>':'<div class="empty">Nog geen eigen recepten.</div>')+'</div>';
-  h+='<details class="card" style="margin-top:14px" data-glean-id="rec-select-built"'+(sel.openBuilt?' open':'')+'><summary class="panel-title" data-act="recBuiltOpen">Ingebouwde recepten verbergen <span class="muted small">('+built.length+')</span></summary><p class="muted small">Ingebouwde recepten worden niet gewist, alleen verborgen. Je zet ze terug via "Verborgen ingebouwde recepten".</p><div class="list">'+built.map(r=>row(r,false)).join('')+'</div></details>';
+  h+='<details class="card" style="margin-top:14px" data-glean-id="rec-select-built"'+(sel.openBuilt?' open':'')+'><summary class="panel-title" data-act="recBuiltOpen">Ingebouwde recepten verbergen <span class="muted small">('+built.length+')</span></summary><p class="muted small">Ingebouwde recepten worden niet gewist, alleen verborgen. Je zet ze terug via "Verborgen ingebouwde recepten". Tip: vink ze allemaal aan en vink daarna de recepten uit die je wilt houden.</p>'+
+    '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px" data-glean-id="rec-built-tools"><input class="inp" style="max-width:240px" placeholder="Zoek op naam, ingrediënt of label…" aria-label="Ingebouwde recepten zoeken" value="'+esc(sel.bq||'')+'" data-input="recBuiltQ">'+
+    (bq?'<button type="button" class="btn sm" data-act="recSelBuilt" data-k="shown">Deze '+shown.length+' aanvinken</button>':'<button type="button" class="btn sm" data-act="recSelBuilt" data-k="all">Alles aanvinken ('+built.length+')</button>'+['ontbijt','lunch','avond'].map(m=>{const c=built.filter(r=>(r.meals||[]).includes(m)).length;return c?'<button type="button" class="btn sm ghost" data-act="recSelBuilt" data-k="'+m+'">Alle '+esc(MEAL_LABEL[m].toLowerCase())+' ('+c+')</button>':''}).join(''))+
+    (nBuilt?'<button type="button" class="btn sm ghost" data-act="recSelBuilt" data-k="none">Geen ingebouwde</button>':'')+'</div>'+
+    '<div class="list">'+(shown.length?shown.map(r=>row(r,false)).join(''):'<div class="empty">Geen ingebouwde recepten gevonden.</div>')+'</div></details>';
   return h}
 A.recSelOn=()=>{UI.rec.sel={ids:{},openBuilt:false};render()};
+A.recCleanup=()=>{UI.rec.sel={ids:{},openBuilt:true,bq:''};UI.rec.tab='mijn';go('recepten',{tab:'mijn'})};
+A.recBuiltQ=(d,el)=>{if(UI.rec.sel){UI.rec.sel.bq=el.value;UI.rec.sel.openBuilt=true;render()}};
+A.recSelBuilt=d=>{const s=UI.rec.sel;if(!s)return;const hid=M.state().hiddenRecipes||{};const q=norm(s.bq||'');const list=BUILTIN_RECIPES.filter(r=>!hid[r.id]);s.openBuilt=true;
+  if(d.k==='none'){list.forEach(r=>delete s.ids[r.id])}else list.filter(r=>d.k==='all'?true:d.k==='shown'?builtMatch(r,q):(r.meals||[]).includes(d.k)).forEach(r=>s.ids[r.id]=true);render()};
 A.recSelOff=()=>{UI.rec.sel=null;render()};
 A.recBuiltOpen=()=>{if(UI.rec.sel){UI.rec.sel.openBuilt=!UI.rec.sel.openBuilt;render()}};
 A.recSelToggle=(d,el)=>{const s=UI.rec.sel;if(!s)return;if(el.checked)s.ids[d.id]=true;else delete s.ids[d.id];render()};
 A.recSelAll=d=>{const s=UI.rec.sel;if(!s)return;Object.values(M.S.recipes).filter(r=>d.k!=='ai'||r.source==='gemini').forEach(r=>s.ids[r.id]=true);render()};
 A.recSelNone=()=>{if(UI.rec.sel){UI.rec.sel.ids={};render()}};
 A.recSelDel=()=>{const s=UI.rec.sel;if(!s)return;const ids=Object.keys(s.ids).filter(id=>M.recipeById(id));if(!ids.length)return;
-  const own=ids.filter(id=>M.S.recipes[id]),built=ids.length-own.length,pl=M.planUses(own).length;
+  const own=ids.filter(id=>M.S.recipes[id]),built=ids.length-own.length,pl=M.planUses(ids).length;
   const txt=[own.length?own.length+(own.length===1?' eigen recept wordt verwijderd':' eigen recepten worden verwijderd'):'',built?built+(built===1?' ingebouwd recept wordt verborgen':' ingebouwde recepten worden verborgen'):''].filter(Boolean).join(' en ')+'.'+
     (pl?' '+pl+(pl===1?' gepland gerecht verdwijnt':' geplande gerechten verdwijnen')+' uit je weekmenu.':'')+' Je kan dit meteen ongedaan maken.';
   confirmBox(own.length?'Recepten verwijderen':'Recepten verbergen',txt,own.length?'Verwijderen ('+ids.length+')':'Verbergen ('+ids.length+')',()=>{const r=M.removeRecipes(ids);UI.rec.sel=null;render();
-    toast([r.deleted?r.deleted+' verwijderd':'',r.hidden?r.hidden+' verborgen':''].filter(Boolean).join(', ')+'.','',{label:'Ongedaan maken',fn:()=>{M.restoreRecipes(r.undo);render();toast('Hersteld.')}})},true)};
+    toast([r.deleted?r.deleted+' verwijderd':'',r.hidden?r.hidden+' verborgen':'',r.unplanned?r.unplanned+' uit het weekmenu gehaald':''].filter(Boolean).join(', ')+'.','',{label:'Ongedaan maken',fn:()=>{M.restoreRecipes(r.undo);render();toast('Hersteld.')}})},true)};
 A.unhideAll=()=>{M.saveState({hiddenRecipes:{}});toast('Alle ingebouwde recepten staan weer aan.')};
 A.unhideRecipe=d=>{const h=Object.assign({},M.state().hiddenRecipes||{});delete h[d.id];M.saveState({hiddenRecipes:h})};
 A.delRecipe=d=>{const r=M.S.recipes[d.id];confirmBox('Recept verwijderen','"'+r.name+'" verwijderen?','Verwijderen',()=>{M.deleteRecipe(d.id);toast('Recept verwijderd.')},true)};
@@ -2624,7 +2633,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.5 · 22-11-2026';
+const APP_VERSION='3.6 · 22-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
