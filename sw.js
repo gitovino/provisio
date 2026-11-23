@@ -2,7 +2,7 @@
    - App-pagina: eerst netwerk (zo krijg je updates meteen), offline uit de cache.
    - Lettertypen en bibliotheken (Google Fonts, jsDelivr): uit de cache, anders netwerk.
    - Synchronisatie (Google) en productopzoekingen (Open Food Facts) gaan altijd rechtstreeks. */
-const VERSION = 'provisio-v10';
+const VERSION = 'provisio-v11';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const CDN = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdn\.jsdelivr\.net|tfhub\.dev|www\.kaggle\.com|storage\.googleapis\.com)\//;
 
