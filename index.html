@@ -1394,6 +1394,53 @@ function purchaseField(val,unknown){return '<div class="field"><label>Aankoopdat
 function purchaseOf(f){if(f.purchaseUnknown||!f.purchaseDate)return '';if(!/^\d{4}-\d{2}-\d{2}$/.test(f.purchaseDate))throw new Error('Ongeldige aankoopdatum.');if(f.purchaseDate>todayStr())throw new Error('De aankoopdatum ligt in de toekomst. Pas ze aan of vink "Onbekend" aan.');return f.purchaseDate}
 A.pdUnknown=(d,el)=>{const fld=el.closest?el.closest('.field'):null;const i=fld&&fld.querySelector('[name=purchaseDate]');if(!i)return;i.disabled=!!el.checked;if(el.checked)i.value='';else if(!i.value)i.value=todayStr()};
 
+/* ===================== PRODUCTDATABANKEN: Open Food Facts met terugval ===================== */
+/* Volgorde per opzoeking: rechtstreeks (kort) → via je eigen Google-script (Google haalt het op) → nog eens rechtstreeks met meer tijd.
+   Antwoordt een databank traag, dan gaat de app 10 minuten meteen via Google voor die databank.
+   Reservebron: UPCitemdb (gratis, zonder account) als Open Food Facts het product niet kent of niet bereikbaar is. */
+const NET={slow:{},relayOld:false,lastVia:''};
+function netHost(url){const m=/^https?:\/\/([^\/?#]+)/i.exec(url||'');return m?m[1].toLowerCase():''}
+function relayAvailable(){return typeof Sync!=='undefined'&&!!(Sync.cfg&&Sync.cfg.url&&Sync.cfg.key)&&!NET.relayOld&&!(typeof window!=='undefined'&&window.GleanBridge)}
+function netLeft(o,ms){if(!o||!o.deadline)return ms;return Math.min(ms,o.deadline-Date.now())}
+async function netDirect(url,ms){if(!(ms>=1500))return {status:'error',error:'time-out'};const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),ms);
+  try{const r=await fetch(url,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);
+    if(r.status===404)return {status:'notfound',http:404};
+    if(!r.ok)return {status:'error',error:r.status===429?'te veel opzoekingen na elkaar':'HTTP '+r.status,http:r.status};
+    let j;try{j=await r.json()}catch(e){return {status:'error',error:'onverwacht antwoord'}}return {status:'ok',json:j}}
+  catch(e){clearTimeout(to);return {status:'error',error:e&&e.name==='AbortError'?'time-out':((e&&e.message)||'netwerkfout')}}}
+async function netRelay(url,ms){if(!(ms>=2000))return {status:'error',error:'time-out',via:'google'};
+  try{const j=await Sync.call('netFetch',{url},null,ms);const st=Number(j.status)||0;
+    if(st===404)return {status:'notfound',http:404,via:'google'};
+    if(st<200||st>=300)return {status:'error',error:st===429?'te veel opzoekingen na elkaar':'HTTP '+st,http:st,via:'google'};
+    let json;try{json=typeof j.body==='string'?JSON.parse(j.body):j.body}catch(e){return {status:'error',error:'onverwacht antwoord',via:'google'}}
+    return {status:'ok',json,via:'google'}}
+  catch(e){const m=(e&&e.message)||'';if(/Onbekende actie/i.test(m)){NET.relayOld=true;return {status:'error',error:'Google-script te oud',old:true,via:'google'}}
+    return {status:'error',error:e&&e.code==='timeout'?'time-out':m||'fout via Google',via:'google'}}}
+/* Definitieve antwoorden (gevonden, niet gevonden, ongeldige vraag) niet opnieuw proberen; time-outs, 429 en 5xx wel. */
+const netFinal=r=>r.status!=='error'||(r.http&&r.http>=400&&r.http<500&&r.http!==408&&r.http!==429);
+async function netGet(url,o){o=o||{};const host=netHost(url);let r=null;const viaFirst=relayAvailable()&&(NET.slow[host]||0)>Date.now();
+  if(!viaFirst){r=await netDirect(url,netLeft(o,o.ms||8000));if(netFinal(r)){if(r.status!=='error')NET.lastVia='direct';return r}}
+  if(relayAvailable()){if(!o.quiet&&!viaFirst&&typeof toast==='function')toast((o.label||'De databank')+' reageert traag — ik probeer het via je Google-script…');
+    const g=await netRelay(url,netLeft(o,o.relayMs||25000));if(netFinal(g)){if(g.status!=='error'){NET.lastVia='google';if(!viaFirst)NET.slow[host]=Date.now()+10*60000}return g}if(!r||!g.old)r=g}
+  if(!o.noRetry){const r2=await netDirect(url,netLeft(o,o.ms2||15000));if(netFinal(r2)){if(r2.status!=='error'){NET.lastVia='direct';delete NET.slow[host]}return r2}r=r2}
+  return r||{status:'error',error:'time-out'}}
+/* ---------- UPCitemdb (reserve) ---------- */
+const UPC_MAX_DAY=90;
+function upcBudgetOk(){try{const k='upcUse',d=todayStr();const u=LS.get(k,null)||{};return !(u.d===d&&u.n>=UPC_MAX_DAY)}catch(e){return true}}
+function upcCount(){try{const k='upcUse',d=todayStr();const u=LS.get(k,null)||{};LS.set(k,u.d===d?{d,n:(u.n||0)+1}:{d,n:1})}catch(e){}}
+function mapUPC(code,j){const it=j&&Array.isArray(j.items)&&j.items.find(x=>x&&String(x.title||'').trim());if(!it)return null;
+  const name=String(it.title||'').replace(/\s+/g,' ').trim().slice(0,120);const brand=String(it.brand||'').trim().slice(0,60);
+  const q=parseQuantityString([it.size,it.title].filter(Boolean).join(' '));const cls=classify(name,[])||(typeof classifyHouse==='function'?classifyHouse(name):null)||(typeof classifyCare==='function'?classifyCare(name):null)||{category:'',sub:''};
+  const img=(Array.isArray(it.images)?it.images:[]).find(u=>/^https:\/\//i.test(String(u)))||'';
+  const dom=typeof M!=='undefined'&&cls.category?M.catDomain(cls.category):'';
+  return {barcode:code,name,brand,qty:q?q.qty:1,unit:q?q.unit:'stuks',quantityLabel:String(it.size||''),photo:img,category:cls.category,sub:cls.sub,source:'UPCitemdb',domain:dom||undefined}}
+async function fetchUPC(code,o){code=String(code||'').replace(/\D/g,'');if(!/^\d{8}$|^\d{12,14}$/.test(code))return {status:'notfound'};
+  if(!upcBudgetOk())return {status:'error',error:'daglimiet UPCitemdb bereikt'};upcCount();
+  const r=await netGet('https://api.upcitemdb.com/prod/trial/lookup?upc='+code,Object.assign({ms:7000,relayMs:15000,noRetry:true,quiet:true,label:'UPCitemdb'},o||{}));
+  if(r.status!=='ok'){if(r.http===400)return {status:'notfound'};return r}
+  if(r.json&&r.json.code&&r.json.code!=='OK')return r.json.code==='TOO_FAST'?{status:'error',error:'te veel opzoekingen na elkaar'}:{status:'notfound'};
+  const m=mapUPC(code,r.json);return m?{status:'ok',data:m}:{status:'notfound'}}
+
 /* ===================== WEERGAVEN ===================== */
 let M=null;let renderQueued=false;
 function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;render();refreshLiveModal()})}
@@ -1760,9 +1807,8 @@ document.addEventListener('keydown',e=>{if(UI.view!=='scanner'||Modals.length)re
   if(e.key==='Enter'){if(Wedge.buf.length>=6&&now-Wedge.t<200){e.preventDefault();const c=Wedge.buf;Wedge.buf='';if(UI.scan.mode!=='uit'&&UI.scan.mode!=='snel')UI.scan.mode='barcode';Scanner.onCode(c,'scanner')}Wedge.buf='';return}
   if(e.key&&e.key.length===1&&/[0-9A-Za-z\-]/.test(e.key)){if(now-Wedge.t>120)Wedge.buf='';Wedge.buf+=e.key;Wedge.t=now}});
 
-async function fetchOFF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
-  try{const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOFF(code,j);if(m)m.health=healthFromOFF(j&&j.product);return m?{status:'ok',data:m}:{status:'notfound'}}
-  catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
+async function fetchOFF(code,o){const r=await netGet('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,Object.assign({label:'Open Food Facts'},o||{}));
+  if(r.status!=='ok')return r.status==='notfound'?{status:'notfound'}:{status:'error',error:r.error};const j=r.json;const m=mapOFF(code,j);if(m)m.health=healthFromOFF(j&&j.product);return m?{status:'ok',data:m}:{status:'notfound'}}
 function gs1Extra(sc){const o={};if(sc.expiryDate){o.expiryDate=sc.expiryDate;o.dateType=sc.dateType}if(sc.batch)o.batch=sc.batch;return o}
 function gs1Note(sc){const p=[];if(sc.expiryDate)p.push((sc.dateType||'THT')+' '+fmtDate(sc.expiryDate));if(sc.batch)p.push('lot '+sc.batch);return p.length?'Uit de QR-code overgenomen: '+p.join(' · ')+'.':''}
 function qrInfo(sc,src){const url=sc.kind==='url'?(/^www\./i.test(sc.url)?'https://'+sc.url:sc.url):'';const resume=Scanner.wasRunning&&UI.view==='scanner';Scanner.wasRunning=false;
@@ -1777,7 +1823,7 @@ async function lookupBarcode(code,src,forceAdd){const sc=parseScan(code);if(sc.k
   if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);const pref=Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':src==='telefoon'?'telefoon':'barcode'},extra,qn?{info:qn}:{});
     if(!forceAdd&&M.lotsOf(local.id).length){scanChoice(local,code,src,pref);return}openConfirm(pref);return}
   const r=await fetchProductInfo(code);
-  if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:'Open Food Facts',info:'Gevonden in Open Food Facts'+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
+  if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:d.source||'Open Food Facts',info:'Gevonden in '+(d.source||'Open Food Facts')+(d.source==='UPCitemdb'?' (reservebron: controleer naam, inhoud en categorie extra goed)':'')+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
   openConfirm(Object.assign({barcode:code,source:'barcode',unknownBarcode:true,info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Fotografeer hieronder de verpakking, dan vult de app in wat het zou kunnen zijn — of vul de gegevens zelf in. De app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
 A.eanLookup=()=>{const v=($('#ean-in').value||'').replace(/\s+/g,'');if(!v)throw new Error('Geef een barcode in.');if(/^\d+$/.test(v)&&[8,12,13,14].includes(v.length)&&!validEAN(v))toast('Let op: het controlecijfer van deze EAN klopt niet — controleer de code.','error');$('#ean-in').value='';Scanner.last={code:'',at:0};lookupBarcode(v,'manueel')};
 A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,1600,0.85);const code=await Scanner.decode(canvas);if(!code)throw new Error('Geen barcode of QR-code gevonden op de foto. Zorg dat de code scherp, recht en goed verlicht is, of typ de code in.');Scanner.onCode(code,'foto')};
@@ -1979,9 +2025,8 @@ async function refreshHealth(pid,quiet,force){const p=M.S.products[pid];if(!p||!
 A.healthRefresh=d=>refreshHealth(d.id,false);
 A.healthUseOff=d=>refreshHealth(d.id,false,true);
 const ALT_FIELDS='code,product_name,product_name_nl,product_name_fr,brands,nutriscore_grade,nutrition_grades,nova_group,additives_tags,labels_tags,image_front_small_url,categories_tags';
-async function offSearch(params){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),12000);
-  try{const r=await fetch('https://world.openfoodfacts.org/api/v2/search?'+params+'&fields='+ALT_FIELDS+'&page_size=40&sort_by=unique_scans_n',{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();return j.products||[]}
-  catch(e){clearTimeout(to);throw new Error(e.name==='AbortError'?'time-out':(e.message||'netwerkfout'))}}
+async function offSearch(params){const r=await netGet('https://world.openfoodfacts.org/api/v2/search?'+params+'&fields='+ALT_FIELDS+'&page_size=40&sort_by=unique_scans_n',{ms:12000,quiet:true,noRetry:true,label:'Open Food Facts'});
+  if(r.status==='notfound')return [];if(r.status!=='ok')throw new Error(r.error||'netwerkfout');return (r.json&&r.json.products)||[]}
 function rankAlternatives(p,list,over){const base=(estimateScore(p.health,over)||{}).score||0;const seen=new Set();
   return list.map(o=>{const h=healthFromOFF(o);const e=estimateScore(h,over);return e&&o.code&&o.code!==p.barcode?{code:String(o.code),name:o.product_name_nl||o.product_name||o.product_name_fr||'',brand:String(o.brands||'').split(',')[0].trim(),nutri:h.nutri,nova:h.nova,organic:h.organic,photo:o.image_front_small_url||'',score:e.score}:null})
     .filter(x=>x&&x.name&&x.score>=base+5&&!seen.has(norm(x.name+x.brand))&&seen.add(norm(x.name+x.brand))).sort((a,b)=>b.score-a.score).slice(0,4)}
@@ -2035,11 +2080,9 @@ async function autoHealth(){if(AUTOH.running||!M||(typeof navigator!=='undefined
 const SR={status:'idle',q:'',items:[],page:1,count:0,scope:'be',error:'',fallback:false};
 const SR_PAGE=24;
 function srUrl(q,page,be){return 'https://world.openfoodfacts.org/cgi/search.pl?action=process&json=1&search_simple=1&search_terms='+encodeURIComponent(q)+(be?'&tagtype_0=countries&tag_contains_0=contains&tag_0=en%3Abelgium':'')+'&sort_by=unique_scans_n&page_size='+SR_PAGE+'&page='+page+'&fields=code,'+OFF_FIELDS}
-async function offNameSearch(q,page,be){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),15000);
-  try{const r=await fetch(srUrl(q,page,be),{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);
-    if(r.status===429)throw new Error('te veel zoekopdrachten na elkaar — wacht een minuutje');if(!r.ok)throw new Error('HTTP '+r.status);
-    const j=await r.json();return {count:Number(j.count)||0,products:(j.products||[]).filter(p=>p&&p.code)}}
-  catch(e){clearTimeout(to);throw new Error(e.name==='AbortError'?'time-out':(e.message||'netwerkfout'))}}
+async function offNameSearch(q,page,be){const r=await netGet(srUrl(q,page,be),{ms:12000,relayMs:25000,noRetry:true,label:'Open Food Facts'});
+  if(r.status!=='ok'){if(r.http===429||/te veel/.test(r.error||''))throw new Error('te veel zoekopdrachten na elkaar — wacht een minuutje');if(r.status==='notfound')return {count:0,products:[]};throw new Error(r.error||'netwerkfout')}
+  const j=r.json||{};return {count:Number(j.count)||0,products:(j.products||[]).filter(p=>p&&p.code)}}
 function srItem(o){const code=String(o.code);const m=mapOFF(code,{status:1,product:o});if(!m||!m.name)return null;m.health=healthFromOFF(o);
   const e=estimateScore(m.health,hSet().addRisk);return Object.assign(m,{code,score:e?e.score:null,nutri:m.health&&m.health.nutri})}
 async function runSearch(more){const q=SR.q;if(!more){SR.items=[];SR.page=1;SR.fallback=false}SR.status='busy';SR.error='';paintSearch();
@@ -2658,7 +2701,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.9 · 23-11-2026';
+const APP_VERSION='3.10 · 23-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -2848,21 +2891,25 @@ function classifyCare(name,tags){const t=norm((name||'')+' '+(tags||[]).join(' '
   for(const r of BEAUTY_RULES)if(r[0].test(t))return {category:'Lichaamsverzorging',sub:r[1]};return null}
 function mapOBF(code,json){const m=mapOFF(code,json);if(!m)return null;const c=classifyCare(m.name,json.product&&json.product.categories_tags)||{category:'Lichaamsverzorging',sub:''};
   return Object.assign(m,{category:c.category,sub:c.sub,source:'Open Beauty Facts',domain:M?M.catDomain(c.category)||'badkamer':'badkamer'})}
-async function fetchOBF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
-  try{const r=await fetch('https://world.openbeautyfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOBF(code,j);return m?{status:'ok',data:m}:{status:'notfound'}}
-  catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
+async function fetchOBF(code,o){const r=await netGet('https://world.openbeautyfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,Object.assign({label:'Open Beauty Facts'},o||{}));
+  if(r.status!=='ok')return r.status==='notfound'?{status:'notfound'}:{status:'error',error:r.error};const m=mapOBF(code,r.json);return m?{status:'ok',data:m}:{status:'notfound'}}
 /* Eerst de databank die bij de gekozen voorraad hoort, daarna de andere. */
 /* ---------- Open Products Facts (wasmiddel, vaat, schoonmaak) ---------- */
 function mapOPF(code,json){const m=mapOFF(code,json);if(!m)return null;const tags=json.product&&json.product.categories_tags;const c=classifyHouse(m.name,tags)||{category:'Schoonmaak',sub:''};
   return Object.assign(m,{category:c.category,sub:c.sub,source:'Open Products Facts',domain:'huishouden'})}
-async function fetchOPF(code){const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),9000);
-  try{const r=await fetch('https://world.openproductsfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,{signal:ctl?ctl.signal:undefined,headers:{'Accept':'application/json'}});clearTimeout(to);if(r.status===404)return {status:'notfound'};if(!r.ok)return {status:'error',error:'HTTP '+r.status};const j=await r.json();const m=mapOPF(code,j);return m?{status:'ok',data:m}:{status:'notfound'}}
-  catch(e){clearTimeout(to);return {status:'error',error:e.name==='AbortError'?'time-out':(e.message||'netwerkfout')}}}
+async function fetchOPF(code,o){const r=await netGet('https://world.openproductsfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields='+OFF_FIELDS,Object.assign({label:'Open Products Facts'},o||{}));
+  if(r.status!=='ok')return r.status==='notfound'?{status:'notfound'}:{status:'error',error:r.error};const m=mapOPF(code,r.json);return m?{status:'ok',data:m}:{status:'notfound'}}
 /* Een wasmiddel dat in een andere databank staat, toch onder Huishouden zetten. */
 function houseFix(r){if(r.status!=='ok'||r.data.domain==='huishouden')return r;const c=classifyHouse(r.data.name);if(c)Object.assign(r.data,{category:c.category,sub:c.sub,domain:'huishouden'});return r}
 /* Eerst de databank die bij de gekozen voorraad hoort, daarna de andere. */
+/* Eerst de databank van de gekozen voorraad (met terugval via Google), dan de andere twee en UPCitemdb als reserve. Samen hooguit ± 50 seconden. */
 async function fetchProductInfo(code){const order=UI.dom==='huishouden'?[fetchOPF,fetchOBF,fetchOFF]:(UI.dom==='badkamer'||UI.dom==='medicijnen')?[fetchOBF,fetchOFF,fetchOPF]:[fetchOFF,fetchOBF,fetchOPF];
-  let first=null;for(const f of order){const r=await f(code);if(r.status==='ok')return houseFix(r);if(!first)first=r}return first}
+  const deadline=Date.now()+50000;const first=await order[0](code,{deadline});if(first.status==='ok')return houseFix(first);
+  const quick={deadline,ms:6000,relayMs:15000,noRetry:true,quiet:true};let rest;
+  if(first.status==='error')rest=await Promise.all([order[1](code,quick),order[2](code,quick),fetchUPC(code,{deadline})]);
+  else{rest=[];for(const f of [order[1],order[2]]){const r=await f(code,quick);rest.push(r);if(r.status==='ok')break}if(!rest.some(r=>r.status==='ok'))rest.push(await fetchUPC(code,{deadline}))}
+  const hit=rest.find(r=>r.status==='ok');if(hit)return houseFix(hit);
+  if(first.status==='error')return first;const err=rest.find(r=>r.status==='error'&&r!==rest[rest.length-1]);return err&&!rest.some(r=>r.status==='notfound')?err:{status:'notfound'}}
 
 /* ---------- Medicijnkast ---------- */
 const MED_NOTE='Het advies volgt de bijsluiter en is geen diagnose. Twijfel je, of houden de klachten aan? Vraag het aan je apotheker of arts. Noodgeval: 112 · Antigifcentrum 070 245 245.';
