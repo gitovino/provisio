@@ -2655,11 +2655,11 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.8.1 · 23-11-2026';
+const APP_VERSION='3.8.2 · 23-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
-  return reach?'Google is bereikbaar, maar weigert de app. Tik op "Adres uit koppelcode testen" om te zien wat Google antwoordt. Meestal: zet bij Implementeren › Implementaties beheren › ✎ "Uitvoeren als" op "Ik" en "Wie heeft toegang" op "Iedereen" (niet "Iedereen met een Google-account"). Of het adres in de koppelcode is verouderd: plak de /exec-URL bij WEB_APP_URL in Code.gs en haal een nieuwe koppelcode op.'
+  return reach?'Google is bereikbaar, maar weigert de app. Tik op "Adres uit koppelcode testen" om te zien wat Google antwoordt. Meestal: zet bij Implementeren › Implementaties beheren › ✎ "Uitvoeren als" op "Ik" en "Wie heeft toegang" op "Iedereen" (niet "Iedereen met een Google-account"). Of het adres in de koppelcode is verouderd: plak de /exec-URL bij WEB_APP_URL in Code.gs en haal een nieuwe koppelcode op. Opnieuw koppelen met dezelfde Sheet vervangt niets: wachtende wijzigingen blijven bewaard.'
     :'Kan Google niet bereiken. Iets blokkeert de verbinding met script.google.com: een adblocker of privacy-extensie, een bedrijfsnetwerk of VPN. Probeer een ander netwerk (bv. mobiele data) of zet de extensie uit voor deze site.'}
 const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fails:0,lastOk:null,info:null,orig:null,pending:null,_t:null,_ot:null,_poll:null,
   attach(ad){const self=this;this.orig={put:ad.put.bind(ad),del:ad.del.bind(ad)};
@@ -2708,12 +2708,17 @@ const Sync={cfg:null,outbox:{},applying:false,busy:false,again:false,err:'',fail
   async pullAll(cfg){let since=0,all=[],info=null;for(let i=0;i<60;i++){const j=await this.call('sync',{since,changes:[]},cfg);all=all.concat(j.changes||[]);since=j.rev;info=j;if(!j.more)break}return {changes:all,rev:since,info}},
   hasLocalData(){return M.products().length>0||Object.keys(M.S.lots).length>0||Object.keys(M.S.recipes).length>0||Object.keys(M.S.shopping).length>0||Object.keys(M.S.plan).length>0},
   async pair(code,name){const p=parsePairCode(code);const cfg={url:p.url,key:p.key,deviceName:(name||'').trim()||defaultDeviceName(),since:0};
-    const j=await this.call('ping',{},cfg);const mode=!j.count?'upload':!this.hasLocalData()?'replace':'ask';this.pending={cfg,count:j.count,info:j};return mode},
+    const j=await this.call('ping',{},cfg);
+    /* Zelfde script (zelfde sleutel), alleen een nieuw adres: niets vervangen of samenvoegen. Wachtende wijzigingen en de synchronisatiestand blijven staan. */
+    if(this.cfg&&this.cfg.key===p.key){this.keepInfo(j);this.cfg=Object.assign({},this.cfg,{url:p.url,deviceName:(name||'').trim()||this.cfg.deviceName||cfg.deviceName});this.saveCfg();this.err='';this.fails=0;this.pending=null;await this.run(false);return 'relink'}
+    const mode=!j.count?'upload':!this.hasLocalData()?'replace':'ask';this.pending={cfg,count:j.count,info:j};return mode},
   async finish(mode){const pd=this.pending;if(!pd)throw new Error('Geen koppeling bezig.');this.keepInfo(pd.info);const cfg=Object.assign({},pd.cfg,{pairedAt:nowISO()});
     if(mode==='replace'){const r=await this.pullAll(cfg);if(!r.changes.length)throw new Error('Er kwamen geen gegevens uit Google — er is niets vervangen.');
       this.applying=true;try{M.tx(()=>{COLS.forEach(c=>Object.keys(M.S[c]).forEach(id=>{M.applyRemote(c,id,null);this.orig.del(c,id)}))})}finally{this.applying=false}
       this.outbox={};this.applyChanges(r.changes,true);cfg.since=r.rev;this.cfg=cfg;this.saveCfg();this.saveOutbox(true);if(r.info)this.keepInfo(r.info);if(!M.isInitialized())M.initDefaults()}
-    else{this.cfg=cfg;this.saveCfg();this.queueAll(mode==='merge'?0:null)}
+    else{const keep=Object.assign({},this.outbox);this.cfg=cfg;this.saveCfg();this.queueAll(mode==='merge'?0:null);
+      /* Wijzigingen die nog wachtten om verstuurd te worden, gaan voor bij samenvoegen. */
+      if(mode==='merge'){Object.keys(keep).forEach(k=>{this.outbox[k]=keep[k]});this.saveOutbox(true)}}
     this.pending=null;if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow();const res=await this.run(false);return res},
   unpair(){this.cfg=null;this.outbox={};this.pending=null;this.err='';this.saveCfg();this.saveOutbox(true);LS.set('syncInfo',null);this.info=null;updateSync()}};
 
@@ -2744,9 +2749,10 @@ function syncPanel(){const c=Sync.cfg,st=M.settings(),r=st.reminders;let h='<div
   return h}
 
 A.syncTestUrl=()=>{const box=$('#sync-url');let c;try{c=parsePairCode($('#sync-code').value)}catch(e){box.innerHTML='<span class="warn-txt">'+esc(e.message)+'</span>';return}
-  box.innerHTML='Adres in deze koppelcode:<br><span class="mono">'+esc(c.url)+'</span><br><span class="muted">Vergelijk met de web-app-URL bij Implementeren › Implementaties beheren. Het adres opent in een nieuw tabblad: zie je “Provisio — synchronisatie actief”, dan is het goed. Zie je een lijst met functies met bovenaan “Provisio (version …)”, dan is het een bibliotheek in plaats van een web-app. Zie je een aanmeldpagina of een foutmelding, volg dan de stappen in de installatiegids.</span>';
+  box.innerHTML='Adres in deze koppelcode:<br><span class="mono">'+esc(c.url)+'</span><br><span class="muted">Vergelijk met de web-app-URL bij Implementeren › Implementaties beheren. Het adres opent in een nieuw tabblad: zie je “Provisio — synchronisatie actief”, dan is het goed. Zie je een lijst met functies met bovenaan “Provisio (version …)”, dan is het een bibliotheek in plaats van een web-app. Zie je een aanmeldpagina of een foutmelding, volg dan de stappen in de installatiegids.<br><b>Tip:</b> test het adres ook in een privévenster (Ctrl+Shift+N). Ben je in je gewone browser aangemeld bij Google, dan lijkt het daar soms te werken terwijl de app toch geweigerd wordt.</span>';
   try{window.open(c.url,'_blank','noopener')}catch(e){}};
 A.syncPair=async()=>{const code=$('#sync-code').value,name=$('#sync-name').value;toast('Verbinden met Google…');const mode=await Sync.pair(code,name);
+  if(mode==='relink'){render(true);const n=Sync.count();toast(Sync.err?'Nieuw adres opgeslagen, maar synchroniseren lukte nog niet: '+Sync.err:'Nieuw adres opgeslagen. Je gegevens zijn niet vervangen'+(n?' · nog '+n+' wijzigingen te versturen':' en alles is verstuurd')+'.',Sync.err?'error':'');return}
   if(mode==='ask'){const pd=Sync.pending;openModal({title:'Er staan al gegevens in Google',gid:'dialog-sync-choice',
     body:'<p style="margin-top:0">Je Google Sheet bevat al gegevens ('+pd.count+' records), bijvoorbeeld van je andere toestel. Ook op dit toestel staat een voorraad. Wat wil je doen?</p><div class="stack">'+
       '<button type="button" class="btn primary" style="text-align:left;justify-content:flex-start" data-act="syncChoose" data-mode="replace"><span><b>Gegevens uit Google gebruiken</b><br><span class="small">Aanbevolen voor een tweede toestel. De voorraad op dit toestel wordt vervangen.</span></span></button>'+
