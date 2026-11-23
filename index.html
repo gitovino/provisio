@@ -1197,7 +1197,7 @@ function gs1Date(s){if(!/^\d{6}$/.test(s))return '';let y=2000+Number(s.slice(0,
 function gtinToEan(g){g=String(g||'').replace(/\D/g,'');if(!g)return '';if(g.length===14&&g.startsWith('000000'))return g.slice(6);if(g.length===14&&g[0]==='0')return g.slice(1);return g}
 function gs1Fields(ai){const o={};const g=ai['01']||ai['02'];if(g){o.gtin=g;o.code=gtinToEan(g)}
   if(ai['17']){o.expiryDate=gs1Date(ai['17']);o.dateType='TGT'}else if(ai['15']){o.expiryDate=gs1Date(ai['15']);o.dateType='THT'}else if(ai['16']){o.expiryDate=gs1Date(ai['16']);o.dateType='THT'}
-  if(!o.expiryDate){delete o.expiryDate;delete o.dateType}if(ai['10'])o.batch=String(ai['10']).slice(0,40);return o}
+  if(!o.expiryDate){delete o.expiryDate;delete o.dateType}if(ai['10'])o.batch=String(ai['10']).slice(0,40);if(ai['21'])o.serial=String(ai['21']).slice(0,40);return o}
 function parseGs1Elements(s){s=String(s).replace(/^\](?:C1|e0|d2|Q3|J1)/,'');const ai={};
   if(/^\(\d{2,4}\)/.test(s)){const re=/\((\d{2,4})\)([^(]*)/g;let m;while((m=re.exec(s)))ai[m[1]]=m[2].replace(/\x1d/g,'').trim();return ai['01']||ai['02']?ai:null}
   let i=0;const GS='\x1d';
@@ -1205,7 +1205,7 @@ function parseGs1Elements(s){s=String(s).replace(/^\](?:C1|e0|d2|Q3|J1)/,'');con
     if(GS1_FIXED[two]){const v=s.slice(i+2,i+2+GS1_FIXED[two]);if(v.length<GS1_FIXED[two]||!/^\d+$/.test(v))return null;ai[two]=v;i+=2+GS1_FIXED[two];continue}
     if(/^3[1-6]\d\d$/.test(s.slice(i,i+4))){const v=s.slice(i+4,i+10);if(!/^\d{6}$/.test(v))return null;ai[s.slice(i,i+4)]=v;i+=10;continue}
     const k=['10','21','22','30','37','240','241','250','251','400','410','420','710','711','712','713','714','715','716','8020'].sort((a,b)=>b.length-a.length).find(x=>s.startsWith(x,i));if(!k)return null;
-    let j=s.indexOf(GS,i+k.length);if(j<0)j=s.length;ai[k]=s.slice(i+k.length,j);i=j}
+    let j=s.indexOf(GS,i+k.length);if(j<0){j=s.length;if(!ai['17']&&s.indexOf(GS)<0){/* scanner liet de scheidingstekens weg: zoek een geldige vervaldatum (17JJMMDD) verder in het veld */const re=/17(\d{6})(?=10|21|$)/g;re.lastIndex=i+k.length+1;let m;while((m=re.exec(s))){if(gs1Date(m[1])){j=m.index;break}re.lastIndex=m.index+1}}}ai[k]=s.slice(i+k.length,j);i=j}
   return ai['01']||ai['02']?ai:null}
 function parseDigitalLink(raw){const m=String(raw).match(/^https?:\/\/[^/?#]+([^?#]*)(?:\?([^#]*))?/i);if(!m)return null;
   const dec=x=>{try{return decodeURIComponent(x.replace(/\+/g,' '))}catch(e){return x}};
@@ -1220,6 +1220,10 @@ function parseScan(raw){const s=String(raw==null?'':raw).trim();if(!s)return {ki
   const ai=parseGs1Elements(s);if(ai){const f=gs1Fields(ai);if(f.code&&validEAN(ai['01']||ai['02']))return Object.assign({kind:'gs1',raw:s},f)}
   if(/\s/.test(s)||s.length>48)return {kind:'text',raw:s};
   return {kind:'barcode',code:s,raw:s}}
+/* ---------- geneesmiddelen: CNK en de DataMatrix van de doos (FMD) ---------- */
+function cnkOf(raw){const s=String(raw==null?'':raw).trim();const m=s.match(/^(?:cnk[\s:.-]*)?(\d{4})[\s.-]?(\d{3})$/i);return m?m[1]+m[2]:''}
+function fmtCnk(c){c=String(c||'');return c.length===7?c.slice(0,4)+'-'+c.slice(4):c}
+function isFmdScan(sc){return !!(sc&&sc.kind==='gs1'&&!sc.url&&sc.gtin&&sc.serial&&(sc.expiryDate||sc.batch))}
 
 /* ---------- Gezondheid ----------
    Score volgens de openbare Yuka-methode (60% voeding/Nutri-Score, 30% additieven, 10% bio), automatisch berekend met open data van Open Food Facts.
@@ -1753,18 +1757,29 @@ A.stBrand=(d,el)=>{const row=el.closest?el.closest('[data-row]'):null;const i=ro
 
 /* ===================== SCANNER: barcode, OCR, bevestigen ===================== */
 const ZXING_URL='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+/* zxing-wasm (via barcode-detector): leest ook de kleine DataMatrix op geneesmiddeldozen, waar ZXing-js vaak faalt */
+const BD_URLS=['https://cdn.jsdelivr.net/npm/barcode-detector@3/dist/es/ponyfill.min.js','https://cdn.jsdelivr.net/npm/barcode-detector@3/ponyfill/+esm','https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js'];
 const TESS_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 const OFF_FIELDS='product_name,product_name_nl,product_name_fr,generic_name,generic_name_nl,brands,quantity,product_quantity,product_quantity_unit,categories_tags,image_front_small_url,image_front_url,image_small_url,nutriscore_grade,nutrition_grades,nova_group,additives_tags,labels_tags,nutrient_levels,nutriments,environmental_score_grade,ecoscore_grade';
 const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:false,last:{code:'',at:0},wasRunning:false,torch:false,devices:[],deviceId:'',busy:false,ocrWorker:null,ocrLangs:'',
   get secure(){return window.isSecureContext!==false},
   capabilities(){return {camera:!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia),native:'BarcodeDetector' in window,secure:this.secure,notif:'Notification' in window}},
-  async ensureDecoder(){if(this.detector||this.zx)return;
-    if('BarcodeDetector' in window){try{const want=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code','data_matrix','itf'];const sup=await BarcodeDetector.getSupportedFormats();const f=want.filter(x=>sup.includes(x));if(f.length){this.detector=new BarcodeDetector({formats:f});return}}catch(e){}}
+  async ensureDecoder(){if(this.detector||this.zx)return;const want=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code','data_matrix','itf'];let nat=null;
+    if('BarcodeDetector' in window){try{const sup=await BarcodeDetector.getSupportedFormats();const f=want.filter(x=>sup.includes(x));if(f.includes('data_matrix')){this.detector=new BarcodeDetector({formats:f});this.engine='native';return}if(f.length)nat=f}catch(e){}}
+    if(!this.noWasm)for(const u of BD_URLS){try{const m=await import(u);const B=m&&(m.BarcodeDetector||m.default&&m.default.BarcodeDetector);if(B){this.detector=new B({formats:want});this.engine='wasm';return}}catch(e){}}
+    if(nat){this.detector=new BarcodeDetector({formats:nat});this.engine='native';return}
     await loadScript(ZXING_URL);const Z=window.ZXing;if(!Z)throw new Error('Barcodebibliotheek (ZXing) niet beschikbaar.');const hints=new Map();hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E,Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.QR_CODE,Z.BarcodeFormat.DATA_MATRIX,Z.BarcodeFormat.ITF]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
-    const r=new Z.MultiFormatReader();r.setHints(hints);this.zx={Z,r}},
-  async decode(src){await this.ensureDecoder();
-    if(this.detector){const res=await this.detector.detect(src);return res&&res.length?res[0].rawValue:null}
-    let c=src;if(!(src instanceof HTMLCanvasElement)){c=document.createElement('canvas');const w=src.videoWidth||src.naturalWidth||src.width,h=src.videoHeight||src.naturalHeight||src.height;if(!w)return null;const sc=Math.min(1,1280/Math.max(w,h));c.width=Math.round(w*sc);c.height=Math.round(h*sc);c.getContext('2d').drawImage(src,0,0,c.width,c.height)}
+    const r=new Z.MultiFormatReader();r.setHints(hints);this.zx={Z,r};this.engine='zxing'},
+  /* beeld klaarzetten: volledig, of het midden (onder het richtkader) op volle resolutie, zodat kleine codes groot genoeg zijn */
+  frame(src,crop){const w=src.videoWidth||src.naturalWidth||src.width,h=src.videoHeight||src.naturalHeight||src.height;if(!w||!h)return null;const f=crop?0.6:1;const sw=Math.round(w*f),sh=Math.round(h*f);
+    const sc=Math.min(1,1280/Math.max(sw,sh));const c=document.createElement('canvas');c.width=Math.round(sw*sc);c.height=Math.round(sh*sc);c.getContext('2d').drawImage(src,Math.round((w-sw)/2),Math.round((h-sh)/2),sw,sh,0,0,c.width,c.height);return c},
+  async decode(src,opt){await this.ensureDecoder();const isCanvas=typeof HTMLCanvasElement!=='undefined'&&src instanceof HTMLCanvasElement;
+    const tries=opt&&opt.both?[false,true]:[isCanvas?false:(this.flip=!this.flip)];for(const crop of tries){const v=await this.decodeOnce(src,crop,isCanvas);if(v)return v}return null},
+  async decodeOnce(src,crop,isCanvas){
+    if(this.detector){const input=crop?this.frame(src,true):src;if(!input)return null;let res;
+      try{res=await this.detector.detect(input)}catch(e){if(this.engine==='wasm'){this.detector=null;this.engine='';this.noWasm=true;await this.ensureDecoder();return this.decodeOnce(src,crop,isCanvas)}throw e}
+      if(!res||!res.length)return null;const r=res.find(x=>x.format==='data_matrix')||res[0];return r.rawValue||null}
+    const c=isCanvas&&!crop?src:this.frame(src,crop);if(!c)return null;
     const {Z,r}=this.zx;try{const lum=new Z.HTMLCanvasElementLuminanceSource(c);const bmp=new Z.BinaryBitmap(new Z.HybridBinarizer(lum));const out=r.decodeWithState(bmp);return out?out.getText():null}catch(e){return null}finally{try{r.reset()}catch(e){}}},
   async start(){if(this.running||this.starting)return;this.starting=true;try{return await this._start()}finally{this.starting=false}},
   camMode(){return ['barcode','snel','uit','ocr','etiket','voedsel'].includes(UI.scan.mode)},
@@ -1774,13 +1789,13 @@ const Scanner={stream:null,track:null,detector:null,zx:null,loop:null,running:fa
   async _start(){const video=$('#scan-video');if(!video)return;const cap=this.capabilities();
     if(!cap.camera)throw new Error(cap.secure?'Deze browser geeft geen toegang tot de camera. Gebruik "Foto van barcode" of typ de code in.':'De camera werkt alleen via https of localhost. Open de app via een https-adres, of gebruik "Foto van barcode".');
     this.setMsg('Camera starten…');
-    try{this.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:this.deviceId?{deviceId:{exact:this.deviceId}}:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}})}
+    try{this.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:this.deviceId?{deviceId:{exact:this.deviceId}}:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
     catch(e){this.setMsg('');const n=e&&e.name;throw new Error(n==='NotAllowedError'||n==='SecurityError'?'Toegang tot de camera geweigerd of geblokkeerd. Sta cameratoegang toe in je browser. In een ingesloten venster (zoals het Glean-voorbeeld) kan de camera geblokkeerd zijn: open de app dan als apart bestand of gebruik "Foto van barcode".':n==='NotFoundError'?'Geen camera gevonden op dit toestel.':'Camera kon niet starten: '+(e.message||n))}
-    video.srcObject=this.stream;video.setAttribute('playsinline','');video.muted=true;await video.play().catch(()=>{});this.track=this.stream.getVideoTracks()[0];this.running=true;
+    video.srcObject=this.stream;video.setAttribute('playsinline','');video.muted=true;await video.play().catch(()=>{});this.track=this.stream.getVideoTracks()[0];this.running=true;try{const tc=this.track&&this.track.getCapabilities&&this.track.getCapabilities();if(tc&&Array.isArray(tc.focusMode)&&tc.focusMode.includes('continuous'))await this.track.applyConstraints({advanced:[{focusMode:'continuous'}]})}catch(e){}
     try{const ds=await navigator.mediaDevices.enumerateDevices();this.devices=ds.filter(d=>d.kind==='videoinput')}catch(e){}
     this.paintControls();
     if(UI.scan.mode==='barcode'||UI.scan.mode==='uit'||UI.scan.mode==='snel'){try{await this.ensureDecoder()}catch(e){this.setMsg('');toast('Barcodeherkenning niet beschikbaar: '+e.message+'. Typ de code in of gebruik een aangesloten scanner.','error');return}
-      this.setMsg((UI.scan.mode==='uit'?'📤 Uit voorraad — richt op de barcode van de lege verpakking':UI.scan.mode==='snel'?'⚡ Snel scannen — houd de producten één voor één voor de camera':'Richt de camera op de barcode of QR-code')+(this.detector?'':' (ZXing)'));const tick=async()=>{if(!this.running)return;if(!this.busy&&video.readyState>=2){this.busy=true;try{const code=await this.decode(video);if(code)this.onCode(code,'camera')}catch(e){}this.busy=false}this.loop=setTimeout(tick,this.detector?180:320)};tick()}
+      this.setMsg((UI.scan.mode==='uit'?'📤 Uit voorraad — richt op de barcode van de lege verpakking':UI.scan.mode==='snel'?'⚡ Snel scannen — houd de producten één voor één voor de camera':UI.dom==='medicijnen'?'💊 Richt op het kleine vierkante codeje (DataMatrix) op de doos, op 10–15 cm':'Richt de camera op de barcode of QR-code')+(this.engine==='zxing'?' (ZXing)':''));const t0=Date.now();let tipped=false;const tick=async()=>{if(!this.running)return;if(!tipped&&UI.dom==='medicijnen'&&UI.scan.mode==='barcode'&&Date.now()-t0>9000){tipped=true;this.setMsg('Lukt het niet? Kom dichterbij, houd de doos stil en recht, zet de zaklamp aan — of typ het CNK-nummer (bv. 1234-567) of tik op Foto.')}if(!this.busy&&video.readyState>=2){this.busy=true;try{const code=await this.decode(video);if(code)this.onCode(code,'camera')}catch(e){}this.busy=false}this.loop=setTimeout(tick,this.detector?180:320)};tick()}
     else this.setMsg(UI.scan.mode==='voedsel'?'Richt op het voedsel en tik op "Foto nemen"':'Richt op het etiket en tik op "Foto nemen"')},
   stop(){this.running=false;clearTimeout(this.loop);if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}this.track=null;this.torch=false;const v=$('#scan-video');if(v)v.srcObject=null;this.paintControls();this.setMsg('')},
   setMsg(t){const el=$('#cam-msg');if(el){el.textContent=t;el.style.display=t?'block':'none'}},
@@ -1816,17 +1831,26 @@ function qrInfo(sc,src){const url=sc.kind==='url'?(/^www\./i.test(sc.url)?'https
     body:'<p style="margin-top:0">'+(sc.kind==='url'?'Deze QR-code bevat een link naar een website, maar geen productnummer. De app kan het product er dus niet mee opzoeken.':'Deze code bevat tekst, maar geen productnummer. De app kan het product er dus niet mee opzoeken.')+'</p><div class="note"><div class="small muted">Inhoud van de code</div><div class="mono small" style="word-break:break-all">'+esc(sc.raw.slice(0,300))+'</div></div><p class="muted small" style="margin-bottom:0">Scan in de plaats de gewone streepjescode op de verpakking. QR-codes met een productnummer (GS1-QR-codes) worden wel herkend, inclusief houdbaarheidsdatum en lotnummer als die erin staan.</p>',
     foot:(url?'<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Link openen</a>':'')+'<button type="button" class="btn primary" data-act="closeModal">'+(resume?'Opnieuw scannen':'Sluiten')+'</button>',
     onClose:()=>{Scanner.last={code:'',at:0};if(UI.view==='scanner')setTimeout(()=>{if(Scanner.autoOn())Scanner.auto();else if(resume)A.camStart().catch(()=>{})},150)}})}
-async function lookupBarcode(code,src,forceAdd){const sc=parseScan(code);if(sc.kind==='url'||sc.kind==='text'){qrInfo(sc,src);return}if(sc.kind==='empty')return;
+async function lookupBarcode(code,src,forceAdd){const cnk=cnkOf(code);const sc=cnk?{kind:'cnk',code:cnk,raw:String(code)}:parseScan(code);if(sc.kind==='url'||sc.kind==='text'){qrInfo(sc,src);return}if(sc.kind==='empty')return;
   if(typeof RMT!=='undefined'&&RMT.role==='phone'&&src!=='telefoon'){rmtSend(String(code).trim());return}
   const extra=sc.kind==='gs1'?gs1Extra(sc):{};const qn=sc.kind==='gs1'?gs1Note(sc):'';if(sc.kind==='gs1')code=sc.code;
-  if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){outScan(code,src);return}toast((sc.kind==='gs1'?'QR-code herkend (product '+code+')':'Barcode '+code+' herkend')+' — opzoeken…');const local=M.findProductByBarcode(code);
+  const fmd=isFmdScan(sc);if(cnk)code=cnk;const medScan=!!cnk||fmd||UI.dom==='medicijnen';
+  if(!forceAdd&&UI.scan.mode==='uit'&&UI.view==='scanner'){const lc=cnk&&findByCnk(cnk);outScan(lc&&lc.barcode||code,src);return}
+  toast((cnk?'CNK '+fmtCnk(cnk)+' herkend':fmd?'Geneesmiddelcode herkend (product '+code+')':sc.kind==='gs1'?'QR-code herkend (product '+code+')':'Barcode '+code+' herkend')+' — opzoeken…');const local=cnk?findByCnk(cnk):M.findProductByBarcode(code);
   if(local){if(local.barcode&&!local.health)refreshHealth(local.id,true);const pref=Object.assign(prefFromProduct(local),{barcode:code,source:src==='scanner'?'barcodescanner':src==='telefoon'?'telefoon':'barcode'},extra,qn?{info:qn}:{});
     if(!forceAdd&&M.lotsOf(local.id).length){scanChoice(local,code,src,pref);return}openConfirm(pref);return}
+  /* geneesmiddelen staan niet in Open Food Facts: niet daar zoeken, maar de doos laten lezen */
+  if(medScan){openConfirm(medUnknownPref(code,sc,cnk,extra,qn));return}
   const r=await fetchProductInfo(code);
   if(r.status==='ok'){const d=r.data;const sameName=M.findProductByName(d.name,d.brand);openConfirm(Object.assign({},sameName?prefFromProduct(sameName):{},{name:d.name,brand:d.brand,category:d.category,sub:d.sub,barcode:code,photo:d.photo,qty:d.qty,unit:d.unit,health:d.health,source:d.source||'Open Food Facts',info:'Gevonden in '+(d.source||'Open Food Facts')+(d.source==='UPCitemdb'?' (reservebron: controleer naam, inhoud en categorie extra goed)':'')+(d.quantityLabel?' · inhoud '+d.quantityLabel:'')+healthLine(d.health)+'. Controleer de gegevens.'+(qn?' '+qn:''),existingProductId:sameName?sameName.id:''},extra));return}
   openConfirm(Object.assign({barcode:code,source:'barcode',unknownBarcode:true,info:(qn?qn+' ':'')+(r.status==='notfound'?'Barcode '+code+' staat niet in Open Food Facts. Fotografeer hieronder de verpakking, dan vult de app in wat het zou kunnen zijn — of vul de gegevens zelf in. De app onthoudt dit product voor de volgende scan.':'Open Food Facts niet bereikbaar ('+r.error+'). Controleer je internetverbinding; in een afgeschermd venster kan externe toegang geblokkeerd zijn. Vul de gegevens manueel in.'),infoKind:'warn'},extra))}
+function findByCnk(cnk){if(!cnk)return null;return Object.values(M.S.products).find(p=>p.med&&p.med.cnk===cnk)||Object.values(M.S.products).find(p=>Array.isArray(p.barcodes)&&p.barcodes.includes(cnk))||null}
+function medUnknownPref(code,sc,cnk,extra,qn){const fmd=isFmdScan(sc);const ai=typeof medAI==='function'&&medAI();
+  const what=cnk?'CNK '+fmtCnk(cnk)+' staat nog niet in je medicijnkast.':fmd?'Geneesmiddelcode van de doos herkend (product '+code+').':'Barcode '+code+' staat nog niet in je medicijnkast.';
+  const info=(qn?qn+' ':'')+what+' Geneesmiddelen staan niet in Open Food Facts, dus de app zoekt daar niet. '+(ai?'Tik hieronder op "Doos fotograferen": de app leest naam, sterkte, aantal en CNK.':'Vul naam en sterkte zelf in, of laat de tekst op de doos lezen. (Met de Google-koppeling leest de AI de doos veel beter.)')+' De volgende scan herkent de app dit geneesmiddel meteen.';
+  return Object.assign({barcode:cnk?'':code,source:'barcode',unknownBarcode:true,medScan:true,domain:'medicijnen',category:'Geneesmiddelen',info,infoKind:'warn'},cnk?{med:{cnk}}:{},extra)}
 A.eanLookup=()=>{const v=($('#ean-in').value||'').replace(/\s+/g,'');if(!v)throw new Error('Geef een barcode in.');if(/^\d+$/.test(v)&&[8,12,13,14].includes(v.length)&&!validEAN(v))toast('Let op: het controlecijfer van deze EAN klopt niet — controleer de code.','error');$('#ean-in').value='';Scanner.last={code:'',at:0};lookupBarcode(v,'manueel')};
-A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,1600,0.85);const code=await Scanner.decode(canvas);if(!code)throw new Error('Geen barcode of QR-code gevonden op de foto. Zorg dat de code scherp, recht en goed verlicht is, of typ de code in.');Scanner.onCode(code,'foto')};
+A.barcodePhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;const {canvas}=await resizeImage(f,2000,0.85);const code=await Scanner.decode(canvas,{both:true});if(!code)throw new Error('Geen barcode of QR-code gevonden op de foto. Zorg dat de code scherp, recht en goed verlicht is, of typ de code in'+(UI.dom==='medicijnen'?' (bij geneesmiddelen kan ook het CNK-nummer, bv. 1234-567)':'')+'.');Scanner.onCode(code,'foto')};
 
 /* ---------- OCR ---------- */
 function preprocess(canvas,hand){const c=document.createElement('canvas');const sc=Math.min(1,(hand?1600:2000)/Math.max(canvas.width,canvas.height));c.width=Math.round(canvas.width*sc);c.height=Math.round(canvas.height*sc);const ctx=c.getContext('2d');ctx.drawImage(canvas,0,0,c.width,c.height);
@@ -1905,7 +1929,7 @@ A.cfPhotoDel=()=>{cfSnapshot();CF.photo='';paintModal()};A.cfUseOcrPhoto=()=>{cf
 A.cfSave=d=>{cfSnapshot();const f=CF.pref;nutToPref(f);const next=d.next==='1';if(!f.name)throw new Error('Productnaam is verplicht.');if(!f.locationId||!M.S.locations[f.locationId])throw new Error('Kies een opslaglocatie.');const qty=Number(f.qty);if(!(qty>0))throw new Error('Geef een hoeveelheid groter dan 0.');
   if(f.dateType==='GEEN')f.expiryDate='';if(f.expiryDate&&f.dateType==='GEEN')f.dateType='EIGEN';if(f.expiryDate&&f.expiryDate<todayStr()&&f.dateType==='TGT'&&!confirm('Deze TGT-datum ligt in het verleden. Toch opslaan?'))return;
   const pdate=purchaseOf(f);const count=Math.min(50,Math.max(1,parseInt(f.count||1,10)));let pid=f.existingProductId;
-  const pdata={name:f.name,brand:f.brand,category:f.category,sub:f.sub,barcode:f.barcode,photo:CF.photo||'',minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,packUnit:f.packUnit,openShelfDays:Number(f.openShelfDays)||0,reorderWhenEmpty:!!f.reorderWhenEmpty,notes:f.pnotes,unit:f.punit||f.unit,kind:f.kind||'',brandRequired:!!f.brandRequired};if(f.health)pdata.health=f.health;{const dm=M.catDomain(f.category)||(M.S.locations[f.locationId]?M.locDomain(M.S.locations[f.locationId]):'')||f.domain;if(dm)pdata.domain=dm}
+  const pdata={name:f.name,brand:f.brand,category:f.category,sub:f.sub,barcode:f.barcode,photo:CF.photo||'',minStock:Number(f.minStock)||0,packSize:Number(f.packSize)||0,packUnit:f.packUnit,openShelfDays:Number(f.openShelfDays)||0,reorderWhenEmpty:!!f.reorderWhenEmpty,notes:f.pnotes,unit:f.punit||f.unit,kind:f.kind||'',brandRequired:!!f.brandRequired};if(f.health)pdata.health=f.health;if(f.med&&typeof f.med==='object'&&Object.keys(f.med).length){const exm=f.existingProductId&&M.S.products[f.existingProductId];pdata.med=Object.assign({},exm&&exm.med||{},f.med,{at:todayStr()})}{const dm=M.catDomain(f.category)||(M.S.locations[f.locationId]?M.locDomain(M.S.locations[f.locationId]):'')||f.domain;if(dm)pdata.domain=dm}
   {const ex0=f.existingProductId&&M.S.products[f.existingProductId];const days=pdata.openShelfDays;
     if(f.osAuto&&days===f.osAuto.days&&!f.osOk)Object.assign(pdata,{openShelfSrc:f.osAuto.src,openShelfNote:f.osAuto.note||'',openShelfStore:f.osAuto.store||'',openShelfConf:f.osAuto.conf||'',openShelfAt:todayStr()});
     else if(ex0)Object.assign(pdata,osPatch(ex0,days,!!f.osOk));else if(days>0)pdata.openShelfSrc='zelf'}
@@ -1944,6 +1968,7 @@ VIEW_RENDER.scanner=function(){if(UI.params.mode&&MODES.some(m=>m[0]===UI.params
     if(!cap.secure)h+='<div class="note warn" style="margin-top:10px">De camera werkt alleen via <b>https://</b> of localhost. "Foto" hieronder werkt wel: je telefoon opent dan de camera-app.</div>';
     if(mode==='barcode'||mode==='uit'||mode==='snel')h+=(mode==='snel'?'<div class="note" style="margin-top:12px" data-glean-id="scan-fast-info"><b>⚡ Snel scannen: na de boodschappen of bij de start</b><br>Scan het ene product na het andere — met de camera, een handscanner of je telefoon. Er opent geen formulier: elk product gaat meteen in je voorraad, met de hoeveelheid en plaats van de vorige keer. Vervaldatums van verse producten (koelkast, diepvries) en onbekende barcodes kijk je achteraf na via <b>Nakijken</b>. Twee dezelfde producten? Scan ze allebei, of tik op <b>+1</b>.</div>':'')+(mode==='uit'?'<div class="note" style="margin-top:12px" data-glean-id="scan-out-info"><b>📤 Uit voorraad: lege verpakking of iets eruit genomen</b><br>Scan de barcode als een verpakking leeg is, of als je er iets uit neemt (bv. 1 koekje uit een pak van 12). De app kiest de juiste partij — eerst een geopende, anders de partij die het eerst vervalt. Je kiest: helemaal op, een aantal eruit (met − en +), <b>tellen</b> ("er zijn er nog 7") of weggegooid. Vergist? Tik in "Deze scansessie" op ✎ om het later aan te passen.</div>':'')+'<div class="grid2" style="margin-top:12px;align-items:end"><label class="btn" style="cursor:pointer">📸 Foto van barcode<input type="file" accept="image/*" capture="environment" hidden data-change="barcodePhoto"></label><div class="row nowrap"><input id="ean-in" class="inp mono" inputmode="numeric" placeholder="Barcode intypen…" data-enter="eanLookup"><button type="button" class="btn" data-act="eanLookup">Zoek</button></div></div><div class="hint" style="margin-top:8px">🔌 Een aangesloten USB- of Bluetooth-barcodescanner werkt als toetsenbord: scan gewoon terwijl dit scherm open is. Productgegevens komen uit <b>Open Food Facts</b>; gescande producten worden lokaal onthouden.</div>';
     else h+='<div class="row" style="margin-top:12px"><label class="btn primary" style="cursor:pointer">📷 Foto maken of kiezen<input type="file" accept="image/*" capture="environment" hidden data-change="'+(mode==='voedsel'?'foodPhoto':'ocrPhoto')+'"></label></div><div id="ocr-prog" style="display:none;margin-top:10px"><div class="progress"><i style="width:0"></i></div><div id="ocr-status" class="small muted" style="margin-top:4px"></div></div><div class="hint" style="margin-top:8px">'+(mode==='voedsel'?'Fotografeer één product (bv. een banaan, broccoli of een pizza) van dichtbij, op een rustige achtergrond. De herkenning draait op je toestel: de foto wordt niet doorgestuurd. Ze kent zo’n 60 soorten fruit, groenten, paddenstoelen, gerechten en dranken — voor vlees, kaas of zuivel typ je de naam beter zelf.':(mode==='etiket'?'Fotografeer het etiket recht van voren, met veel licht. Gedrukte datums worden goed herkend; handschrift slechts gedeeltelijk — je controleert alles voor het opslaan.':'Fotografeer de voorkant (naam, merk, gewicht) of de zijde met de datum. Staat er een barcode op de foto, dan wordt die ook gelezen.')+' OCR draait lokaal in je browser via Tesseract.js (eerste keer downloaden van de taalbestanden).')+'</div>';
+    if(mode==='barcode'&&UI.dom==='medicijnen')h+='<div class="note" style="margin-top:12px" data-glean-id="scan-med-tips"><b>💊 Geneesmiddel scannen</b><br>Scan het <b>kleine vierkante codeje</b> (DataMatrix) op de doos: daarin zitten ook de vervaldatum en het lotnummer. Houd de doos op 10–15 cm, stil en recht, met veel licht (zaklamp). Lukt het niet? Typ hieronder het <b>CNK-nummer</b> (7 cijfers, bv. 1234-567) of tik op Foto.</div>';
     h+='</div>'}
   h+='</div><div class="c4 stack">'+(mode==='snel'?'<div class="card" data-glean-id="bulk-panel"><div id="bulk-panel">'+bulkPanelHtml()+'</div></div>':'')+'<div class="card"'+(mode==='snel'?' hidden':'')+' data-glean-id="scan-session"><div class="row between"><h2 class="panel-title" style="margin:0">Deze scansessie</h2><span class="small muted">'+UI.scan.session.length+'</span></div><div class="session list" id="scan-session" style="margin-top:8px">'+sessionHtml()+'</div></div></div></div></div>';
   return h};
@@ -2156,7 +2181,7 @@ async function runFood(canvas){const r=await recogniseFood(canvas);const best=r.
   pref.infoKind=r.err||!best?'warn':'';openConfirm(pref)}
 A.foodPhoto=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;Scanner.stop();const {canvas}=await resizeImage(f,1024,0.85);await runFood(canvas)};
 /* hulppaneel in het bevestigingsvenster */
-function aiPanel(){const p=CF.pref;if(p.existingProductId)return '';const ai=CF.ai||{};
+function aiPanel(){const p=CF.pref;if(p.existingProductId)return '';const ai=CF.ai||{};if(p.medScan||p.domain==='medicijnen'||p.category==='Geneesmiddelen')return medPanel(p,ai);
   const unknown=p.unknownBarcode;let h='<div class="card ai-help" data-glean-id="cf-ai"><div class="lbl" style="margin-bottom:4px">'+(unknown?'Onbekend product — laat de app helpen':'Hulp bij invullen')+'</div>';
   h+='<div class="small" style="margin-bottom:8px">'+(unknown?'Fotografeer de <b>voorkant van de verpakking</b>: de app leest naam, merk en gewicht en zoekt welk product het zou kunnen zijn. Geen verpakking (fruit, groente, gerecht)? Gebruik <b>Voedsel herkennen</b>.':'Lees de gegevens van de verpakking of laat een foto van het voedsel herkennen.')+'</div>';
   h+='<div class="row"><label class="btn'+(unknown?' primary':'')+'" style="cursor:pointer">'+ico('document_scanner','📦')+'Verpakking lezen<input type="file" accept="image/*" capture="environment" hidden data-change="cfOcr"></label><label class="btn" style="cursor:pointer">'+ico('nutrition','🍎')+'Voedsel herkennen<input type="file" accept="image/*" capture="environment" hidden data-change="cfFood"></label></div>';
@@ -2167,18 +2192,48 @@ function aiPanel(){const p=CF.pref;if(p.existingProductId)return '';const ai=CF.
   const cands=ai.cands||[];
   if(cands.length)h+='<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Lijkt op deze producten in Open Food Facts — tik om over te nemen'+(p.barcode?' (je gescande barcode blijft behouden)':'')+':</div><div class="list">'+cands.map(c=>'<div class="li"><div class="thumb">'+(c.photo?'<img src="'+esc(c.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(c.name)+(c.brand?' <span class="muted" style="font-weight:400">· '+esc(c.brand)+'</span>':'')+'</div><div class="sub-t">'+(c.quantityLabel?esc(c.quantityLabel)+' ':'')+(c.nutri?nutriBadge(c.nutri):'')+'</div></div><div class="acts"><button type="button" class="btn sm" data-act="cfPickCand" data-code="'+esc(c.code)+'">Overnemen</button></div></div>').join('')+'</div></div>';
   return h+'</div>'}
+function aiProg(ai){let h='<div id="ocr-prog" style="display:'+(ai.busy?'block':'none')+';margin-top:10px"><div class="progress"><i style="width:'+(ai.busy?'8%':'0')+'"></i></div><div id="ocr-status" class="small muted" style="margin-top:4px">'+esc(ai.busy||'')+'</div></div>';
+  if(ai.msg)h+='<div class="note'+(ai.kind?' '+ai.kind:'')+'" style="margin-top:10px">'+esc(ai.msg)+'</div>';return h}
+/* geneesmiddel: de doos laten lezen in plaats van in voedingsdatabanken te zoeken */
+function medPanel(p,ai){const can=typeof medAI==='function'&&medAI();
+  let h='<div class="card ai-help" data-glean-id="cf-med-ai"><div class="lbl" style="margin-bottom:4px">'+(p.unknownBarcode?'Onbekend geneesmiddel — laat de doos lezen':'Hulp bij invullen')+'</div>';
+  h+='<div class="small" style="margin-bottom:8px">'+(can?'Fotografeer de <b>voorkant</b> en de <b>zijkant met de samenstelling en het CNK-nummer</b> (tot 3 foto\'s tegelijk). De AI leest naam, werkzame stof en sterkte, vorm, aantal en CNK. De foto\'s worden niet bewaard.':'Met de <b>Google-koppeling</b> (Instellingen) leest de AI de doos: naam, sterkte, aantal en CNK. Zonder koppeling leest de app de tekst op dit toestel — minder nauwkeurig.')+'</div>';
+  h+='<div class="row">'+(can?'<label class="btn primary" style="cursor:pointer">'+ico('photo_camera','📷')+'Doos fotograferen<input type="file" accept="image/*" capture="environment" multiple hidden data-change="cfMedPhoto"></label>':'')+
+    '<label class="btn'+(can?'':' primary')+'" style="cursor:pointer">'+ico('document_scanner','📦')+'Tekst lezen op toestel<input type="file" accept="image/*" capture="environment" hidden data-change="cfOcr"></label>'+
+    (p.barcode?'<button type="button" class="btn" data-act="cfMedDb" title="Voor vitaminen en supplementen met een gewone barcode">Supplement? Zoek de barcode op</button>':'')+'</div>';
+  return h+aiProg(ai)+'</div>'}
+function medFill(p,m){const f=[];m=m||{};const st=(m.stoffen||[])[0];let nm=String(m.naam||'').trim();if(nm&&st&&st.sterkte&&!/\d/.test(nm))nm+=' '+st.sterkte;
+  if(nm&&!p.name){p.name=nm;f.push('naam')}if(m.merk&&!p.brand){p.brand=m.merk;f.push('merk')}
+  const n=Math.round(Number(m.aantal));if(n>0&&n<=1000&&(!(Number(p.qty)>0)||Number(p.qty)===1)){p.qty=n;p.unit='stuks';f.push('aantal ('+n+')')}
+  if(m.stoffen&&m.stoffen.length)f.push('werkzame stof');if(m.cnk&&!(p.med&&p.med.cnk))f.push('CNK '+fmtCnk(m.cnk));
+  p.med=Object.assign({},m,p.med&&p.med.cnk?{cnk:p.med.cnk}:{});
+  if(m.naOpeningDagen){const r=cfSetOpen(m.naOpeningDagen,'etiket','Doos');if(r&&!/blijft/.test(r))f.push('houdbaar na opening')}
+  if(!p.category)p.category='Geneesmiddelen';return f}
+A.cfMedPhoto=async(d,el)=>{const fs=Array.from(el.files||[]).slice(0,3);el.value='';if(!fs.length||!CF)return;cfSnapshot();const imgs=[];let thumb='';
+  for(const f of fs){const r=await resizeImage(f,1600,0.82);imgs.push(String(r.dataUrl).split(',')[1]||'');if(!thumb)thumb=(await resizeImage(f,360,0.72)).dataUrl}
+  CF.ai={busy:'Doos lezen… (kan tot een halve minuut duren)'};paintModal();
+  try{const j=await Sync.call('aiLeaflet',{images:imgs},null,150000);if(!CF)return;if(!j||!j.ok)throw new Error(j&&j.error||'Geen antwoord.');
+    const filled=medFill(CF.pref,j.med);if(!CF.photo&&thumb)CF.photo=thumb;
+    CF.ai={msg:filled.length?'Gelezen van de doos: '+filled.join(', ')+'. Controleer alles, zeker naam en sterkte.':'Op de foto\'s stond niets bruikbaars. Fotografeer de doos recht, scherp en met veel licht.',kind:filled.length?'':'warn'}}
+  catch(e){if(CF)CF.ai={msg:'Doos lezen lukte niet: '+(e.message||e)+' Vul de gegevens zelf in of gebruik "Tekst lezen op toestel".',kind:'warn'}}
+  if(CF){paintModal();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg)}};
+A.cfMedDb=async()=>{if(!CF||!CF.pref.barcode)return;cfSnapshot();CF.ai={busy:'Barcode opzoeken in de open productdatabanken…'};paintModal();
+  const r=await fetchProductInfo(CF.pref.barcode);if(!CF)return;const p=CF.pref;
+  if(r.status==='ok'){const d=r.data;if(!p.name)p.name=d.name;if(!p.brand)p.brand=d.brand;if(d.qty&&(!(Number(p.qty)>0)||Number(p.qty)===1)){p.qty=d.qty;p.unit=d.unit}if(!CF.photo&&d.photo)CF.photo=d.photo;
+    CF.ai={msg:'Gevonden in '+(d.source||'Open Food Facts')+'. Dat is een algemene productdatabank, geen geneesmiddelendatabank: controleer naam, sterkte en aantal.',kind:'warn'}}
+  else CF.ai={msg:r.status==='notfound'?'Niet gevonden in de open productdatabanken (normaal voor geneesmiddelen). Fotografeer de doos of vul zelf in.':'Productdatabanken niet bereikbaar ('+r.error+').',kind:'warn'};paintModal()};
 function cfPaint(){cfSnapshot();paintModal()}
 A.cfOcr=async(d,el)=>{const f=el.files&&el.files[0];el.value='';if(!f)return;cfSnapshot();const {canvas}=await resizeImage(f,2000,0.85);return cfOcrFrom(canvas)};
 async function cfOcrFrom(canvas){if(!CF)return;CF.ai={busy:'Verpakking lezen…'};paintModal();
   const o=await ocrRead(canvas,false);const p=CF.pref;const fl=o.parsed.fields;const filled=[];
   const put=(k,v,lbl)=>{if(v!=null&&v!==''&&!p[k]){p[k]=v;filled.push(lbl)}};
   if(!o.err){put('name',fl.name,'naam');put('brand',fl.brand,'merk');if(fl.qty&&(!p.qty||p.qty===1)){p.qty=fl.qty;p.unit=fl.unit||p.unit;filled.push('inhoud')}
-    if(fl.category&&!p.category){p.category=fl.category;p.sub=fl.sub||''}else if(!p.category&&p.name){const c=classify(p.name);if(c){p.category=c.category;p.sub=c.sub}}
+    if(fl.category&&!p.category){p.category=fl.category;p.sub=fl.sub||''}else if(!p.category&&p.name){const c=(p.domain==='medicijnen'||UI.dom==='medicijnen')&&classifyCare(p.name)||classify(p.name);if(c){p.category=c.category;p.sub=c.sub}}
     if(fl.expiryDate&&!p.expiryDate){p.expiryDate=fl.expiryDate;p.dateType=fl.dateType||'THT';filled.push('vervaldatum')}
     if(fl.openDays){const m=cfSetOpen(fl.openDays,'etiket','');if(m&&!/blijft/.test(m))filled.push('houdbaar na opening')}
     if(!CF.photo&&o.thumb)CF.photo=o.thumb;p.ocrText=o.text;p.ocrConf=o.conf}
   CF.ai={busy:'',msg:o.err?'Verpakking lezen lukte niet ('+o.err+'). De OCR-bibliotheek wordt de eerste keer van internet geladen.':filled.length?'Ingevuld van de verpakking: '+filled.join(', ')+'. Controleer de gegevens.':'Geen bruikbare tekst gevonden. Fotografeer de voorkant recht van voren, met veel licht.',kind:o.err||!filled.length?'warn':''};
-  paintModal();if(!o.err)await findCandidates();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg+(CF.ai.cands&&CF.ai.cands.length?' '+CF.ai.cands.length+' mogelijke producten gevonden.':''))}
+  paintModal();if(!o.err&&!(p.medScan||p.domain==='medicijnen'||p.category==='Geneesmiddelen'))await findCandidates();if(typeof A11y!=='undefined')A11y.say(CF.ai.msg+(CF.ai.cands&&CF.ai.cands.length?' '+CF.ai.cands.length+' mogelijke producten gevonden.':''))}
 async function findCandidates(){const p=CF.pref;const q=[p.brand,p.name].filter(Boolean).join(' ').trim();if(q.length<3)return;
   CF.ai.busy='Zoeken welk product het zou kunnen zijn…';paintModal();
   try{let r=await offNameSearch(q,1,true);if(!r.products.length)r=await offNameSearch(q,1,false);
@@ -3451,7 +3506,7 @@ VIEW_RENDER.instellingen=function(){const tab=UI.params.tab||UI.settingsTab;UI.s
   if(tab==='sync'){h+=syncPanel()}
   if(tab==='koppelingen'){const c=Scanner.capabilities();const row=(n,ok,txt,btn)=>'<div class="li"><div class="grow"><div class="main-t">'+n+' '+(ok===true?'<span class="tag lv-ok">actief</span>':ok===false?'<span class="tag lv-orange">beperkt</span>':'<span class="tag">te testen</span>')+'</div><div class="sub-t">'+txt+'</div></div>'+(btn||'')+'</div>';
     h+='<div class="card"><div class="list">'+row('Camera',c.camera&&c.secure,c.camera&&c.secure?'Camera-API beschikbaar. Toestemming wordt gevraagd bij de eerste scan.':!c.secure?'Vereist https:// of localhost. Zonder camera-API werkt "Foto" (de camera-app van je toestel) wel.':'Geen camera-API in deze browser. Gebruik "Foto" of typ de barcode in.')+
-      row('Barcodeherkenning',c.native?true:null,c.native?'Ingebouwde BarcodeDetector van de browser (snel, offline).':'Geen ingebouwde herkenning: ZXing wordt bij gebruik geladen van cdn.jsdelivr.net (internet nodig).',c.native?'':'<button type="button" class="btn sm" data-act="testZxing">Test</button>')+
+      row('Barcodeherkenning',c.native?true:null,c.native?'Ingebouwde BarcodeDetector van de browser (snel, offline).':'Geen ingebouwde herkenning: zxing-wasm (ook voor de DataMatrix op geneesmiddeldozen) of ZXing wordt bij gebruik geladen van cdn.jsdelivr.net (internet nodig).',c.native?'':'<button type="button" class="btn sm" data-act="testZxing">Test</button>')+
       row('Productdatabase',null,'Open Food Facts (gratis, open data, geen account of API-sleutel nodig). Onbekende producten vul je één keer zelf in; daarna herkent de app ze lokaal.','<button type="button" class="btn sm" data-act="testOff">Test verbinding</button>')+
       row('OCR (tekstherkenning)',Scanner.ocrWorker?true:null,'Tesseract.js draait lokaal in je browser (Nederlands, Engels, Frans). Bij eerste gebruik worden ±10–20 MB taalbestanden geladen. Gedrukte tekst: goed; handschrift: beperkt.','<button type="button" class="btn sm" data-act="testOcr">Test laden</button>')+
       row('Meldingen',c.notif?('Notification' in window&&Notification.permission==='granted'):false,c.notif?'Browsermeldingen terwijl de app open is; altijd ook in het meldingencentrum.':'Niet ondersteund — gebruik het meldingencentrum.')+
