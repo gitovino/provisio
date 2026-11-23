@@ -453,6 +453,11 @@ details.card>summary{cursor:pointer}
 /* Niet dringend */
 .calm-opt{padding:12px 14px;border:2px solid transparent}
 .calm-opt.on{border-color:var(--md-sys-color-primary,#0a7)}
+/* Uitklaplijsten leesbaar in donkere modus (de lijst zelf krijgt anders een witte achtergrond) */
+html[data-theme='dark'] select.inp{background-color:var(--md-sys-color-surface-container-high);color:var(--md-sys-color-on-surface)}
+html[data-theme='dark'] select option,html[data-theme='dark'] select optgroup{background-color:var(--md-sys-color-surface-container-highest);color:var(--md-sys-color-on-surface)}
+html[data-theme='dark'] select option:checked{background-color:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
+html[data-theme='dark'] select option:disabled{color:var(--md-sys-color-on-surface-variant)}
 </style>
 </head>
 <body>
@@ -2452,7 +2457,7 @@ A.saveRecipe=()=>{rfRead();RF.ing=RF.ing.filter(i=>i.n);RF.ing.forEach(i=>{if(!(
    De API-sleutel staat in de Scripteigenschappen van je Apps Script, nooit in de app.
    De app stuurt alleen: productnaam, categorie, hoeveelheid, dagen tot vervaldatum, diepvries/geopend,
    aantal porties, leeftijden van kinderen (geen namen) en je wensen. */
-const AIR={meal:'avond',count:2,wish:'',urgent:true,maxMissing:2,busy:false,err:'',errCode:'',results:[],exclude:[],saved:{},meta:null,modal:null};
+const AIR={meal:'avond',count:2,servings:null,wish:'',urgent:true,maxMissing:2,busy:false,err:'',errCode:'',results:[],exclude:[],saved:{},meta:null,modal:null};
 function aiStock(){const by={};M.lots().forEach(l=>{if(!M.suitable(l))return;const p=M.S.products[l.productId];if(!p||!p.name)return;const e=M.lotExpiry(l);const key=p.id+'|'+(l.unit||'stuks');
     const x=by[key]||(by[key]={name:p.name,category:p.sub||p.category||'',qty:0,unit:l.unit||'stuks',days:null,freezer:false,opened:false});x.qty+=Number(l.qty)||0;
     if(e.days!=null&&(x.days==null||e.days<x.days))x.days=e.days;if(M.isFreezer(l.locationId))x.freezer=true;if(l.opened)x.opened=true});
@@ -2468,11 +2473,13 @@ function aiPaired(){return typeof Sync!=='undefined'&&!!(Sync.cfg&&Sync.cfg.url)
 function aiBanner(){const n=AIR.results.length;return '<div class="card" data-glean-id="ai-recipes-cta" style="margin-bottom:16px"><div class="row between"><div class="grow" style="min-width:220px"><div style="font-weight:600">✨ Nieuw gerecht laten bedenken</div><div class="small muted">Google Gemini bedenkt recepten met wat je in huis hebt, met voorrang voor wat bijna vervalt. Een recept dat je goed vindt, sla je op als eigen recept.</div></div>'+
   (aiPaired()?'<button type="button" class="btn primary" data-act="aiOpen">'+(n?'Toon AI-ideeën ('+n+')':'✨ Bedenk iets')+'</button>':'<button type="button" class="btn" data-act="go" data-view="instellingen" data-ptab="sync">Eerst Google koppelen</button>')+'</div>'+
   (aiPaired()?'':'<div class="hint" style="margin-top:6px">De AI-functie loopt via je eigen Google Apps Script, zodat je API-sleutel geheim blijft. Koppel eerst Google-synchronisatie.</div>')+'</div>'}
-A.aiOpen=()=>{if(!aiPaired()){go('instellingen',{tab:'sync'});return}AIR.modal=openModal({title:'✨ Nieuwe gerechten bedenken',gid:'dialog-ai-recipe',wide:true,body:aiBody,foot:aiFoot})};
+A.aiOpen=()=>{if(!aiPaired()){go('instellingen',{tab:'sync'});return}AIR.servings=null;AIR.modal=openModal({title:'✨ Nieuwe gerechten bedenken',gid:'dialog-ai-recipe',wide:true,body:aiBody,foot:aiFoot})};
 function aiReadForm(){const m=$('#ai-meal');if(!m)return;if(M.MEALS.includes(m.value))AIR.meal=m.value;const c=Number(($('#ai-count')||{}).value);if(c>=1&&c<=3)AIR.count=c;
-  const w=$('#ai-wish');if(w)AIR.wish=String(w.value||'').trim().slice(0,300);const u=$('#ai-urgent');if(u)AIR.urgent=!!u.checked;const x=($('#ai-miss')||{}).value;if(x!==''&&x!=null&&Number(x)>=0&&Number(x)<=3)AIR.maxMissing=Number(x)}
+  const w=$('#ai-wish');if(w)AIR.wish=String(w.value||'').trim().slice(0,300);const u=$('#ai-urgent');if(u)AIR.urgent=!!u.checked;const x=($('#ai-miss')||{}).value;if(x!==''&&x!=null&&Number(x)>=0&&Number(x)<=3)AIR.maxMissing=Number(x);const sv=Number(($('#ai-serv')||{}).value);if(sv>=1&&sv<=20)AIR.servings=sv}
+function aiServings(){const v=Number(AIR.servings);return v>=1&&v<=20?v:M.effServings()}
+function aiServOpts(){const hh=M.effServings();const cur=aiServings();const vals=[1,2,3,4,5,6,7,8,9,10,12];[hh,cur].forEach(v=>{if(!vals.includes(v))vals.push(v)});vals.sort((a,b)=>a-b);return vals.map(v=>[String(v),String(v).replace('.',',')+(v===hh?' (gezin)':'')])}
 function aiBody(){const consent=!!M.state().aiConsent;const st=aiStock();const urg=st.filter(x=>x.days!=null&&x.days<=3).length;
-  let h='<div class="grid4"><div class="field"><label for="ai-meal">Maaltijd</label><select id="ai-meal" class="inp">'+sel(AIR.meal,M.MEALS.map(m=>[m,MEAL_LABEL[m]]))+'</select></div><div class="field"><label for="ai-count">Aantal ideeën</label><select id="ai-count" class="inp">'+sel(String(AIR.count),[['1','1'],['2','2'],['3','3']])+'</select></div><div class="field"><label for="ai-miss">Max. ontbrekend</label><select id="ai-miss" class="inp">'+sel(String(AIR.maxMissing),[['0','Niets kopen'],['1','1 ingrediënt'],['2','2 ingrediënten'],['3','3 ingrediënten']])+'</select></div><div class="field"><label>Porties</label><div class="inp" style="display:flex;align-items:center" title="'+esc(householdLine())+'">'+esc(String(M.effServings()))+'</div></div></div>'+
+  let h='<div class="grid4"><div class="field"><label for="ai-meal">Maaltijd</label><select id="ai-meal" class="inp">'+sel(AIR.meal,M.MEALS.map(m=>[m,MEAL_LABEL[m]]))+'</select></div><div class="field"><label for="ai-count">Aantal ideeën</label><select id="ai-count" class="inp">'+sel(String(AIR.count),[['1','1'],['2','2'],['3','3']])+'</select></div><div class="field"><label for="ai-miss">Max. ontbrekend</label><select id="ai-miss" class="inp">'+sel(String(AIR.maxMissing),[['0','Niets kopen'],['1','1 ingrediënt'],['2','2 ingrediënten'],['3','3 ingrediënten']])+'</select></div><div class="field"><label for="ai-serv">Porties</label><select id="ai-serv" class="inp" title="'+esc(householdLine())+'">'+sel(String(aiServings()),aiServOpts())+'</select></div></div>'+
     '<div class="field"><label for="ai-wish">Wensen (optioneel)</label><input id="ai-wish" class="inp" maxlength="300" placeholder="bv. vegetarisch, in 20 minuten, iets met de oven, zonder noten" value="'+esc(AIR.wish)+'"></div>'+
     '<label class="check"><input type="checkbox" id="ai-urgent" '+(AIR.urgent?'checked':'')+'> Voorrang aan producten die bijna vervallen'+(urg?' ('+urg+')':'')+'</label>';
   h+='<div class="hint" data-glean-id="ai-privacy">Gemini krijgt via je Google Apps Script: '+st.length+' voorraadregels (productnaam, categorie, hoeveelheid, dagen tot vervaldatum, diepvries/geopend), het aantal porties, de leeftijden van kinderen (geen namen) en je wensen. Bij de gratis variant van Gemini mag Google die gegevens gebruiken om zijn diensten te verbeteren.</div>';
@@ -2504,7 +2511,7 @@ A.aiGo=async()=>{if(AIR.busy)return;aiReadForm();if(!aiPaired())throw new Error(
   const hh=M.household();const prev=AIR.results.map(r=>r.name);
   const exclude=prev.concat(AIR.exclude,Object.values(M.S.recipes).map(r=>r.name)).filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,40);
   AIR.busy=true;AIR.err='';AIR.errCode='';AIR.t0=Date.now();clearInterval(AIR.timer);AIR.timer=setInterval(aiTick,1000);aiRepaint();
-  try{const j=await Sync.call('aiRecipes',{meal:AIR.meal,count:AIR.count,wish:AIR.wish,urgent:AIR.urgent,maxMissing:AIR.maxMissing,servings:hh.servings,kidsAges:hh.children.map(k=>k.age).filter(a=>a!=null),exclude,stock},null,AI_WAIT_MS);
+  try{const j=await Sync.call('aiRecipes',{meal:AIR.meal,count:AIR.count,wish:AIR.wish,urgent:AIR.urgent,maxMissing:AIR.maxMissing,servings:aiServings(),kidsAges:hh.children.map(k=>k.age).filter(a=>a!=null),exclude,stock},null,AI_WAIT_MS);
     const list=(j.recipes||[]).map(aiToRecipe).filter(r=>r.ing.length&&r.steps.length);if(!list.length)throw new Error('Gemini gaf geen bruikbaar recept terug. Probeer het opnieuw.');
     AIR.exclude=AIR.exclude.concat(prev).slice(-30);AIR.results=list;AIR.saved={};AIR.meta={model:j.model||'',used:j.used,max:j.max}}
   catch(e){AIR.errCode=e.code||'';const long=aiSecs()>=300;
@@ -2648,7 +2655,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.8 · 23-11-2026';
+const APP_VERSION='3.8.1 · 23-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
