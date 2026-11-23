@@ -450,6 +450,9 @@ details.card>summary{cursor:pointer}
 .bulk-row .chip{min-height:40px;padding:0 14px}
 .bulk-tabs .count{opacity:.7;margin-left:4px}
 @media (max-width:640px){.bulk-last{flex-wrap:wrap}.bulk-last .bl-act{width:100%}}
+/* Niet dringend */
+.calm-opt{padding:12px 14px;border:2px solid transparent}
+.calm-opt.on{border-color:var(--md-sys-color-primary,#0a7)}
 </style>
 </head>
 <body>
@@ -865,9 +868,13 @@ function createModel(adapter,hooks){hooks=hooks||{};
   const shopSorted=o=>shopGroups(o).reduce((a,g)=>a.concat(g.items),[]);
   function levelFor(days){const t=settings().thresholds;if(days<0)return 'expired';if(days<=t.red)return 'red';if(days<=t.orange)return 'orange';if(days<=t.yellow)return 'yellow';return 'ok'}
   function lotExpiry(lot,ref){ref=ref||todayStr();const p=S.products[lot.productId]||{};
-    let date=lot.expiryDate||'',type=lot.expiryDate?(lot.dateType||'THT'):'';
+    let date=lot.expiryDate||'',type=lot.expiryDate?(lot.dateType||'THT'):'';let tht='';
+    /* Realistische houdbaarheid: alleen bovenop een THT (kwaliteitsdatum), nooit bij een TGT. */
+    if(type==='THT'&&Number(p.realDays)>0){tht=date;date=addDays(date,Number(p.realDays));type='REAL'}
     if(lot.opened&&lot.openedDate&&Number(p.openShelfDays)>0&&!isFreezer(lot.locationId)){const od=addDays(lot.openedDate,Number(p.openShelfDays));if(!date||od<date){date=od;type='OPEN'}}
-    if(!date)return {date:'',type:'',days:null,level:'none'};const days=daysUntil(date,ref);return {date,type,days,level:levelFor(days)}}
+    /* "Niet dringend": geen plaats in Eerst opgebruiken en geen meldingen — behalve bij een TGT (veiligheid). */
+    const calm=!!p.noUrgent&&type!=='TGT';
+    if(!date)return {date:'',type:'',days:null,level:'none',calm};const days=daysUntil(date,ref);const r={date,type,days,level:levelFor(days),calm};if(tht)r.tht=tht;return r}
   function suitable(lot,ref){const e=lotExpiry(lot,ref);return !(e.level==='expired'&&e.type==='TGT')}
   function fifoCmp(a,b){const ea=lotExpiry(a),eb=lotExpiry(b);
     if(ea.date&&eb.date&&ea.date!==eb.date)return ea.date<eb.date?-1:1;if(ea.date&&!eb.date)return -1;if(!ea.date&&eb.date)return 1;
@@ -945,7 +952,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
   function expiryWarning(e,frozen){if(!e||!e.date)return 'Geen vervaldatum ingevuld — vul de datum in of ken zelf een gebruiksdatum toe.';
     if(e.level==='expired'){if(e.type==='TGT')return 'TGT overschreden: niet meer gebruiken — dit product kan onveilig zijn.';
       if(e.type==='THT')return frozen?'THT overschreden maar ingevroren: meestal nog veilig, kwaliteit kan afnemen. Controleer voor gebruik.':'THT overschreden: niet automatisch onveilig. Controleer geur, kleur, smaak en verpakking.';
-      if(e.type==='OPEN')return 'Houdbaarheid na opening verstreken — controleer zorgvuldig voor gebruik.';return 'Zelf gekozen gebruiksdatum verstreken — controleer de kwaliteit.'}
+      if(e.type==='OPEN')return 'Houdbaarheid na opening verstreken — controleer zorgvuldig voor gebruik.';if(e.type==='REAL')return 'Ook de realistische houdbaarheid is voorbij. Controleer geur, kleur, smaak en verpakking.';return 'Zelf gekozen gebruiksdatum verstreken — controleer de kwaliteit.'}
     if(e.days===0)return e.type==='TGT'?'Vandaag nog gebruiken (TGT).':'Vervalt vandaag.';return null}
   function hist(action,lot,qty,extra){extra=extra||{};const p=lot&&S.products[lot.productId];
     const h={id:uid('h'),ts:nowISO(),date:todayStr(),action,productId:lot?lot.productId:(extra.productId||''),lotId:lot?lot.id:'',name:extra.name||(p?p.name:''),qty:qty==null?'':rnd(qty),unit:lot?lot.unit:(extra.unit||''),from:extra.from||'',to:extra.to||(lot?lot.locationId:''),user,note:extra.note||''};if(extra.lot)h.lot=extra.lot;
@@ -1084,7 +1091,7 @@ function createModel(adapter,hooks){hooks=hooks||{};
     (r.ing||[]).forEach(ing=>{const need=(ing.u==='stuks'&&ing.q>=1)?Math.max(1,Math.round(ing.q*scale)):rnd(ing.q*scale);const cands=[];
       prods.filter(p=>ingMatches(ing,p)).forEach(p=>lotsOf(p.id).forEach(l=>{if(!suitable(l,ref))return;const avail=rnd(l.qty-(reserved[l.id]||0));if(avail>0.0005)cands.push({l,p,avail})}));
       cands.sort((a,b)=>fifoCmp(a.l,b.l));let remaining=need;const allocs=[];let unknown=false;const urgent=[];let opened=false;
-      const markUrg=c=>{const e=lotExpiry(c.l,ref);if(URG[e.level]&&!urgent.some(u=>u.lotId===c.l.id))urgent.push({lotId:c.l.id,name:c.p.name,days:e.days,level:e.level,type:e.type});if(c.l.opened)opened=true};
+      const markUrg=c=>{const e=lotExpiry(c.l,ref);if(URG[e.level]&&!e.calm&&!urgent.some(u=>u.lotId===c.l.id))urgent.push({lotId:c.l.id,name:c.p.name,days:e.days,level:e.level,type:e.type});if(c.l.opened)opened=true};
       for(const c of cands){if(remaining<=0.0005)break;let f=convert(1,c.l.unit,ing.u,c.p);
         if(f==null){if(ing.u==='stuks'||c.l.unit==='stuks'||c.l.unit==='verpakkingen'){ /* onbekende omrekening: neem 1 stuk/verpakking als volledig */ unknown=true;allocs.push({lotId:c.l.id,productId:c.p.id,qty:Math.min(c.avail,1),unit:c.l.unit,ingQty:remaining,approx:true});markUrg(c);remaining=0;break}unknown=true;continue}
         const takeU=Math.min(c.avail*f,remaining);allocs.push({lotId:c.l.id,productId:c.p.id,qty:rnd(takeU/f),unit:c.l.unit,ingQty:rnd(takeU)});remaining=rnd(remaining-takeU);markUrg(c);if(productTotal(c.p.id,ing.u)>=need*3)big++}
@@ -1122,16 +1129,16 @@ function createModel(adapter,hooks){hooks=hooks||{};
     let shop=0;if(o.addMissing)shop=addWeekMissing(ws);return {added,shop}}
   function buildNotifications(){const st=settings();const out=[];const today=todayStr();
     lots().forEach(l=>{const p=S.products[l.productId]||{name:'?'};const e=lotExpiry(l);const where=locName(l.locationId);
-      if(e.level==='expired')out.push({key:'expired:'+l.id+':'+e.date,type:'expired',sev:e.type==='TGT'?3:2,title:p.name+' is vervallen',text:expiryWarning(e,isFreezer(l.locationId))+' · '+fmtQty(l.qty,l.unit)+' · '+where,lotId:l.id,productId:l.productId,date:e.date});
-      else if(e.days!=null&&e.days<=Math.max(st.reminders.daysBefore,0))out.push({key:'soon:'+l.id+':'+e.date,type:'soon',sev:e.level==='red'?2:1,title:p.name+' vervalt '+(e.days===0?'vandaag':'over '+e.days+' dag'+(e.days===1?'':'en')),text:(e.type==='OPEN'?'na opening':e.type==='EIGEN'?'eigen datum':e.type)+' '+fmtDate(e.date)+' · '+fmtQty(l.qty,l.unit)+' · '+where,lotId:l.id,productId:l.productId,date:e.date});
-      if(!l.expiryDate&&!(l.opened&&Number(p.openShelfDays)>0))out.push({key:'nodate:'+l.id,type:'nodate',sev:0,title:'Geen vervaldatum: '+p.name,text:fmtQty(l.qty,l.unit)+' · '+where+(l.freezeDate?' · ingevroren '+fmtDate(l.freezeDate):''),lotId:l.id,productId:l.productId});
+      if(e.calm){}else if(e.level==='expired')out.push({key:'expired:'+l.id+':'+e.date,type:'expired',sev:e.type==='TGT'?3:2,title:p.name+' is vervallen',text:expiryWarning(e,isFreezer(l.locationId))+' · '+fmtQty(l.qty,l.unit)+' · '+where,lotId:l.id,productId:l.productId,date:e.date});
+      else if(e.days!=null&&e.days<=Math.max(st.reminders.daysBefore,0))out.push({key:'soon:'+l.id+':'+e.date,type:'soon',sev:e.level==='red'?2:1,title:p.name+' vervalt '+(e.days===0?'vandaag':'over '+e.days+' dag'+(e.days===1?'':'en')),text:(e.type==='OPEN'?'na opening':e.type==='EIGEN'?'eigen datum':e.type==='REAL'?'realistisch':e.type)+' '+fmtDate(e.date)+' · '+fmtQty(l.qty,l.unit)+' · '+where,lotId:l.id,productId:l.productId,date:e.date});
+      if(!l.expiryDate&&!p.noUrgent&&!(l.opened&&Number(p.openShelfDays)>0))out.push({key:'nodate:'+l.id,type:'nodate',sev:0,title:'Geen vervaldatum: '+p.name,text:fmtQty(l.qty,l.unit)+' · '+where+(l.freezeDate?' · ingevroren '+fmtDate(l.freezeDate):''),lotId:l.id,productId:l.productId});
       if(l.needsCheck)out.push({key:'check:'+l.id,type:'check',sev:1,title:'Controleer gegevens: '+p.name,text:'Automatisch herkend (scan/OCR) — bevestig naam, hoeveelheid en datum.',lotId:l.id,productId:l.productId});
       if(l.opened&&l.openedDate&&!Number(p.openShelfDays)&&daysUntil(today,l.openedDate)>=14)out.push({key:'opened:'+l.id+':'+l.openedDate,type:'check',sev:0,title:p.name+' is al '+daysUntil(today,l.openedDate)+' dagen open',text:'Controleer of het nog goed is. Tip: stel bij het product in hoelang het na opening houdbaar is.',lotId:l.id,productId:l.productId})});
     lowStock().forEach(x=>{const p=x.p,id=x.multi?'k:'+x.key:p.id;if(x.level==='laag'&&st.reminders.minStock)out.push({key:'low:'+id+':'+x.total,type:'low',sev:1,title:x.name+' is bijna op',text:'Nog '+fmtQty(x.total,x.unit)+' (minimum '+fmtQty(x.min,x.unit)+')'+(openShoppingFor(p.id)?' · staat op je lijst':''),productId:p.id});
       else if(x.level==='op')out.push({key:'empty:'+id+':'+(x.emptySince||''),type:'empty',sev:2,title:x.name+' is volledig op',text:openShoppingFor(p.id)?'Staat op je boodschappenlijst.':'Staat nog niet op je boodschappenlijst.',productId:p.id})});
     if(st.reminders.weekly){const lc=state().locChecked||{};const wd=(new Date(parseD(today)).getUTCDay()+6)%7;locations().forEach(l=>{if(!lotsIn(l.id).length)return;const last=lc[l.id];if((!last||daysUntil(today,last)>=7)&&(wd>=Number(st.reminders.weeklyDay)||!last||daysUntil(today,last)>=10))out.push({key:'weekly:'+l.id+':'+mondayOf(today),type:'check',sev:0,title:'Wekelijkse controle: '+l.name,text:last?'Laatst gecontroleerd op '+fmtDate(last)+'.':'Nog niet gecontroleerd.',locationId:l.id})})}
     const order={expired:0,soon:1,empty:2,low:3,check:4,nodate:5};out.sort((a,b)=>order[a.type]-order[b.type]||b.sev-a.sev||String(a.date||'').localeCompare(String(b.date||'')));return out}
-  function useFirst(){const lim=Math.max(settings().useFirstDays,0);return lots().map(l=>({l,p:S.products[l.productId],e:lotExpiry(l)})).filter(x=>x.p&&x.e.date&&x.e.days<=lim).sort((a,b)=>a.e.days-b.e.days||fifoCmp(a.l,b.l))}
+  function useFirst(){const lim=Math.max(settings().useFirstDays,0);return lots().map(l=>({l,p:S.products[l.productId],e:lotExpiry(l)})).filter(x=>x.p&&x.e.date&&!x.e.calm&&x.e.days<=lim).sort((a,b)=>a.e.days-b.e.days||fifoCmp(a.l,b.l))}
   function lowStock(){const seen=new Set(),out=[],t=todayStr();products().forEach(p=>{const g=p.brandRequired?'p:'+p.id:'k:'+kindKey(p);if(seen.has(g))return;const k=kindState(p.id);if(k.multi)seen.add(g);const level=productLevel(p.id);if(!level)return;
       const es=k.members.map(m=>m.emptySince||'').sort().pop()||'';const rep=k.multi?(k.members.find(m=>m.emptySince===es&&es)||k.members.find(m=>productTotal(m.id)>0)||p):p;
       if(level==='laag'||(level==='op'&&(k.min>0||(es&&daysUntil(t,es)<=14))))out.push({p:rep,total:k.total,level,unit:k.unit,min:k.min,multi:k.multi,key:kindKey(p),name:k.multi?kindLabel(p):p.name,emptySince:es})});return out}
@@ -1299,7 +1306,7 @@ const sel=(v,opts)=>opts.map(o=>{const val=Array.isArray(o)?o[0]:o,lab=Array.isA
 const plural=(n,a,b)=>n+' '+(n===1?a:b);
 const LEVEL_LABEL={expired:'Vervallen',red:'1–3 dagen',orange:'4–7 dagen',yellow:'8–14 dagen',ok:'Ruim houdbaar',none:'Geen datum'};
 const DATE_TYPES=[['THT','THT – ten minste houdbaar tot'],['TGT','TGT – te gebruiken tot'],['EIGEN','Zelf gekozen gebruiksdatum'],['GEEN','Geen datum']];
-const TYPE_SHORT={THT:'THT',TGT:'TGT',EIGEN:'Eigen datum',OPEN:'Na opening'};
+const TYPE_SHORT={THT:'THT',TGT:'TGT',EIGEN:'Eigen datum',OPEN:'Na opening',REAL:'Realistisch'};
 const CAT_EMOJI={'Droge voeding':'🌾','Conserven en sauzen':'🥫','Kruiden en specerijen':'🌿','Koeling':'🧀','Vlees, vis en gevogelte':'🥩','Groenten en fruit':'🥕','Diepvries':'❄️','Overige':'🍪'};
 const SUB_EMOJI={Pasta:'🍝',Rijst:'🍚',Noedels:'🍜','Brood en beschuiten':'🍞',Zuivel:'🥛',Kaas:'🧀',Eieren:'🥚',Vleeswaren:'🥓',Kip:'🍗',Gehakt:'🥩',Vis:'🐟',Schaaldieren:'🦐','Verse groenten':'🥕','Vers fruit':'🍎','Snoep en chocolade':'🍫',Koekjes:'🍪','Chips en snacks':'🥨',Dranken:'🥤','IJs en desserts':'🍨','Restjes en zelfbereide gerechten':'♻️',Tomatenproducten:'🍅','Soepen en bouillon':'🍲','Diepvriesgroenten':'🥦'};
 function prodEmoji(p){return (p&&(SUB_EMOJI[p.sub]||CAT_EMOJI[p.category]))||'📦'}
@@ -1433,13 +1440,13 @@ VIEW_RENDER.dashboard=function(){const K=dashKind();const lots=M.lots();const pr
     stat('onder-minimum',low.length,'Onder minimumvoorraad','voorraad',low.length>0,' data-pstatus="laag"')+stat('boodschappen',shop.length,'Op boodschappenlijst','boodschappen')+'</div>';
   h+='<div class="dash">';
   // Eerst opgebruiken (voeding en verzorging)
-  if(K.useFirst){h+='<section class="card focus-card '+(K.food?'c7':'c12')+'" data-glean-id="dash-eerst-opgebruiken"><div class="row between"><h2 class="panel-title">Eerst opgebruiken – vervaldatum nadert</h2><button type="button" class="btn sm ghost" data-act="go" data-view="vervaldata">Alles →</button></div>';
+  if(K.useFirst){h+='<section class="card focus-card '+(K.food?'c7':'c12')+'" data-glean-id="dash-eerst-opgebruiken"><div class="row between"><h2 class="panel-title">Eerst opgebruiken – vervaldatum nadert</h2><div class="row nowrap">'+(()=>{const n=new Set(longCandidates().filter(x=>uf.includes(x)||uf.some(y=>y.l.id===x.l.id)).map(x=>x.p.id)).size;return n?'<button type="button" class="btn sm" data-act="longBulk" data-glean-id="long-bulk">⏳ Lang houdbaar? ('+n+')</button>':''})()+'<button type="button" class="btn sm ghost" data-act="go" data-view="vervaldata">Alles →</button></div></div>';
   if(!uf.length)h+='<div class="empty">Niets dringend. Producten die binnen '+M.settings().useFirstDays+' dagen vervallen verschijnen hier automatisch.</div>';
   else{h+='<div class="list">';uf.slice(0,10).forEach(x=>{const tip=usageTip(x,recMap);const w=M.expiryWarning(x.e,M.isFreezer(x.l.locationId));
-    h+='<div class="li bar-'+x.e.level+'" data-glean-id="uf-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(fmtQty(x.l.qty,x.l.unit))+' · '+esc(M.locName(x.l.locationId))+' · '+typeTag(x.e)+' '+fmtDate(x.e.date)+'</div>'+
+    h+='<div class="li bar-'+x.e.level+'" data-glean-id="uf-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(fmtQty(x.l.qty,x.l.unit))+' · '+esc(M.locName(x.l.locationId))+' · '+expLabel(x.e)+'</div>'+
       (w&&x.e.level==='expired'?'<div class="warn-txt'+(x.e.type==='TGT'?' tgt':'')+'">⚠ '+esc(w)+'</div>':'')+
       '<div class="warn-txt muted">💡 '+(tip.rid?'<a href="#" data-act="recipe" data-id="'+esc(tip.rid)+'">'+esc(tip.txt)+'</a>':esc(tip.txt))+'</div></div><div class="acts">'+
-      (tip.tgt?'<button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(x.l.id)+'">Weggooien</button>':'<button type="button" class="btn sm primary" data-act="useUpLot" data-id="'+esc(x.l.id)+'">✓ Opgebruikt</button><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(x.l.id)+'">Deel</button>'+(tip.freeze?'<button type="button" class="btn sm" data-act="freezeLot" data-id="'+esc(x.l.id)+'">❄ Invriezen</button>':''))+'</div></div>'});
+      (tip.tgt?'<button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(x.l.id)+'">Weggooien</button>':'<button type="button" class="btn sm primary" data-act="useUpLot" data-id="'+esc(x.l.id)+'">✓ Opgebruikt</button><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(x.l.id)+'">Deel</button>'+(tip.freeze?'<button type="button" class="btn sm" data-act="freezeLot" data-id="'+esc(x.l.id)+'">❄ Invriezen</button>':'')+(x.e.type!=='TGT'?'<button type="button" class="btn sm ghost" data-act="calmOpen" data-id="'+esc(x.l.id)+'" data-glean-id="calm-btn" title="Realistische datum of negeren">⏳ Niet dringend</button>':''))+'</div></div>'});
     if(uf.length>10)h+='<div class="small muted" style="padding:8px 10px">+ '+(uf.length-10)+' andere — zie Vervaldatums</div>';h+='</div>'}
   h+='</section>'}
   // Wat kan ik maken
@@ -1514,12 +1521,12 @@ A.product=d=>openProduct(d.id);
 function openProduct(pid){openModal({title:'Product',gid:'dialog-product',wide:true,live:true,body:()=>productDetail(pid),foot:()=>M.S.products[pid]?'<button type="button" class="btn danger" data-act="deleteProduct" data-id="'+esc(pid)+'">Product verwijderen</button><span class="grow"></span><button type="button" class="btn" data-act="toShop" data-id="'+esc(pid)+'">🛒 Op lijst</button><button type="button" class="btn" data-act="editProduct" data-id="'+esc(pid)+'">✎ Bewerken</button><button type="button" class="btn primary" data-act="addLotFor" data-id="'+esc(pid)+'">+ Nieuwe partij</button>':''})}
 function productDetail(pid){const p=M.S.products[pid];if(!p)return '<div class="empty">Dit product bestaat niet meer.</div>';const ls=M.fifoLots(pid);const tot=M.productTotal(pid);
   let h='<div class="row nowrap" style="align-items:flex-start">'+thumb(p).replace('class="thumb"','class="thumb" style="width:72px;height:72px;flex-basis:72px;font-size:34px"')+'<div class="grow"><div style="font-size:20px;font-weight:600;line-height:1.25">'+esc(p.name)+'</div><div class="muted">'+esc([p.brand,p.category,p.sub].filter(Boolean).join(' · '))+'</div>'+
-   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag"'+(M.openShelfSrc(p)==='geschat'?' title="Geschat door Gemini. Pas aan via Bewerken als het etiket iets anders zegt."':p.openShelfNote?' title="'+esc(p.openShelfNote)+'"':'')+'>'+p.openShelfDays+' d houdbaar na opening'+({etiket:' · etiket',geschat:' · geschat'}[M.openShelfSrc(p)]||'')+'</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'</div></div>';h+=M.isMed(p)?medSection(p):M.productDomain(p)==='keuken'?healthSection(p):'';
+   '<div class="row small" style="margin-top:6px"><span class="tag">Totaal '+esc(fmtQty(tot,p.unit))+'</span>'+(p.brandRequired?'<span class="tag">🔒 Alleen dit merk</span>':'<span class="tag" title="Op je boodschappenlijst zonder merk">Soort: '+esc(M.kindLabel(p))+(M.kindMembers(pid).length>1?' · '+M.kindMembers(pid).length+' merken':'')+'</span>')+(p.minStock?'<span class="tag'+(M.productLevel(pid)?' lv-yellow':'')+'">Minimum '+esc(fmtQty(p.minStock,p.unit))+'</span>':'')+(p.packSize?'<span class="tag">Verpakking '+esc(fmtQty(p.packSize,p.packUnit))+'</span>':'')+(p.openShelfDays?'<span class="tag"'+(M.openShelfSrc(p)==='geschat'?' title="Geschat door Gemini. Pas aan via Bewerken als het etiket iets anders zegt."':p.openShelfNote?' title="'+esc(p.openShelfNote)+'"':'')+'>'+p.openShelfDays+' d houdbaar na opening'+({etiket:' · etiket',geschat:' · geschat'}[M.openShelfSrc(p)]||'')+'</span>':'')+(p.barcode?'<span class="tag mono">EAN '+esc(p.barcode)+'</span>':'')+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+(M.isMed(p)||M.productDomain(p)==='huishouden'?'':longDetail(p))+'</div></div>';h+=M.isMed(p)?medSection(p):M.productDomain(p)==='keuken'?healthSection(p):'';
   h+='<div><div class="row between"><div class="eyebrow">Voorraadpartijen · FIFO-volgorde</div>'+(ls.length?'<button type="button" class="btn sm" data-act="useProduct" data-id="'+esc(pid)+'">− Gebruiken (FIFO)</button>':'')+'</div>';
   if(!ls.length)h+='<div class="empty">Geen voorraad meer. '+(M.openShoppingFor(pid)?'Staat op je boodschappenlijst.':'')+'</div>';
   else{h+='<div class="list" style="margin-top:6px">';ls.forEach((l,i)=>{const e=M.lotExpiry(l);const w=M.expiryWarning(e,M.isFreezer(l.locationId));const ok=M.suitable(l);
     h+='<div class="li bar-'+e.level+'" data-glean-id="lot-'+esc(l.id)+'" style="align-items:flex-start;flex-wrap:wrap"><div class="grow" style="min-width:220px"><div class="main-t">'+(i===0?'<span class="tag lv-ok">eerst gebruiken</span> ':'')+esc(fmtQty(l.qty,l.unit))+' <span class="muted" style="font-weight:400">· '+esc(M.locName(l.locationId))+'</span></div>'+
-     '<div class="sub-t">'+(e.date?typeTag(e)+' '+fmtDate(e.date)+' · '+esc(daysLabel(e)):'<span class="tag lv-none">geen datum</span>')+(l.freezeDate?' · ❄ ingevroren '+fmtDate(l.freezeDate):'')+(l.opened?' · geopend '+fmtDate(l.openedDate):' · ongeopend')+(l.purchaseDate?' · gekocht '+fmtDate(l.purchaseDate):' · aankoopdatum onbekend')+(l.batch?' · lot '+esc(l.batch):'')+(l.needsCheck?' · <span class="tag lv-info">te controleren</span>':'')+'</div>'+
+     '<div class="sub-t">'+(e.date?expLabel(e)+' · '+esc(daysLabel(e)):'<span class="tag lv-none">geen datum</span>')+(l.freezeDate?' · ❄ ingevroren '+fmtDate(l.freezeDate):'')+(l.opened?' · geopend '+fmtDate(l.openedDate):' · ongeopend')+(l.purchaseDate?' · gekocht '+fmtDate(l.purchaseDate):' · aankoopdatum onbekend')+(l.batch?' · lot '+esc(l.batch):'')+(l.needsCheck?' · <span class="tag lv-info">te controleren</span>':'')+'</div>'+
      (w&&(e.level==='expired'||e.level==='none')?'<div class="warn-txt'+(!ok?' tgt':'')+'">⚠ '+esc(w)+'</div>':'')+(l.notes?'<div class="small">'+esc(l.notes)+'</div>':'')+'</div><div class="acts">'+
      (ok?'<button type="button" class="btn sm" data-act="useLot" data-id="'+esc(l.id)+'">− Gebruik</button><button type="button" class="btn sm" data-act="useUpLot" data-id="'+esc(l.id)+'">✓ Op</button>':'')+'<button type="button" class="btn sm" data-act="topUpLot" data-id="'+esc(l.id)+'">+</button>'+(!l.opened?'<button type="button" class="btn sm" data-act="openLot" data-id="'+esc(l.id)+'">Openen</button>':'')+
      '<button type="button" class="btn sm" data-act="moveLot" data-id="'+esc(l.id)+'">⇄ Verplaats</button><button type="button" class="btn sm" data-act="editLot" data-id="'+esc(l.id)+'">✎</button><button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(l.id)+'">🗑</button></div></div>'});h+='</div>'}
@@ -1588,7 +1595,7 @@ function locationDetail(id){const l=M.S.locations[id];const s=M.locStats(id);con
   h+='<div class="small muted" style="margin:-8px 0 12px">'+(lc?'Laatst gecontroleerd op '+fmtDate(lc):'Nog niet gecontroleerd')+'</div>';
   const lots=M.lotsIn(id).sort((a,b)=>M.fifoCmp(a,b));if(!lots.length)return h+'<div class="card empty">Deze opslagplaats is leeg.</div>';
   h+='<div class="card" data-glean-id="loc-inhoud"><div class="list">';lots.forEach(lot=>{const p=M.S.products[lot.productId];if(!p)return;const e=M.lotExpiry(lot);
-    h+='<div class="li bar-'+e.level+'" data-glean-id="loclot-'+esc(lot.id)+'">'+thumb(p)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(p.id)+'">'+esc(p.name)+'</div><div class="sub-t">'+esc(fmtQty(lot.qty,lot.unit))+(lot.opened?' · geopend':'')+(lot.freezeDate?' · ❄ '+fmtDate(lot.freezeDate):'')+' · '+(e.date?typeTag(e)+' '+fmtDate(e.date):'geen datum')+'</div></div>'+daysBadge(e)+'<div class="acts"><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(lot.id)+'">−</button><button type="button" class="btn sm" data-act="moveLot" data-id="'+esc(lot.id)+'">⇄</button></div></div>'});
+    h+='<div class="li bar-'+e.level+'" data-glean-id="loclot-'+esc(lot.id)+'">'+thumb(p)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(p.id)+'">'+esc(p.name)+'</div><div class="sub-t">'+esc(fmtQty(lot.qty,lot.unit))+(lot.opened?' · geopend':'')+(lot.freezeDate?' · ❄ '+fmtDate(lot.freezeDate):'')+' · '+(e.date?expLabel(e):'geen datum')+'</div></div>'+daysBadge(e)+'<div class="acts"><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(lot.id)+'">−</button><button type="button" class="btn sm" data-act="moveLot" data-id="'+esc(lot.id)+'">⇄</button></div></div>'});
   return h+'</div></div>'}
 A.markChecked=d=>{M.markChecked(d.id);toast('Controle van '+M.locName(d.id)+' geregistreerd.')};
 A.locOrder=d=>{const ls=M.locations();const i=ls.findIndex(x=>x.id===d.id);const j=i+Number(d.dir);if(j<0||j>=ls.length)return;M.tx(()=>{ls.forEach((l,k)=>{const o=k===i?j:k===j?i:k;if(l.order!==o+1)M.put('locations',Object.assign({},l,{order:o+1}))})})};
@@ -1608,7 +1615,7 @@ VIEW_RENDER.vervaldata=function(){const f=UI.exp;const t=M.settings().thresholds
   groups.forEach(g=>{const items=rows.filter(x=>x.e.level===g[0]).sort((a,b)=>(a.e.days==null?1e9:a.e.days)-(b.e.days==null?1e9:b.e.days));if(!items.length)return;
     h+='<section class="card" style="margin-bottom:14px" data-glean-id="exp-'+g[0]+'"><h2 class="panel-title"><span class="tag lv-'+g[0]+'">'+items.length+'</span> '+esc(g[1])+'</h2><div class="list">';
     items.slice(0,g[0]==='ok'?40:500).forEach(x=>{const w=M.expiryWarning(x.e,M.isFreezer(x.l.locationId));const ok=M.suitable(x.l);
-      h+='<div class="li" data-glean-id="explot-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(fmtQty(x.l.qty,x.l.unit))+' · '+esc(M.locName(x.l.locationId))+' · '+(x.e.date?typeTag(x.e)+' '+fmtDate(x.e.date):'')+(x.l.freezeDate?' · ❄ '+fmtDate(x.l.freezeDate):'')+'</div>'+(w&&(g[0]==='expired'||g[0]==='none')?'<div class="warn-txt'+(!ok?' tgt':'')+'">⚠ '+esc(w)+'</div>':'')+'</div><div class="acts">'+
+      h+='<div class="li" data-glean-id="explot-'+esc(x.l.id)+'">'+daysBadge(x.e)+'<div class="grow" style="min-width:0"><div class="main-t" style="cursor:pointer" data-act="product" data-id="'+esc(x.p.id)+'">'+esc(x.p.name)+'</div><div class="sub-t">'+esc(fmtQty(x.l.qty,x.l.unit))+' · '+esc(M.locName(x.l.locationId))+' · '+(x.e.date?expLabel(x.e):'')+(x.l.freezeDate?' · ❄ '+fmtDate(x.l.freezeDate):'')+'</div>'+(w&&(g[0]==='expired'||g[0]==='none')?'<div class="warn-txt'+(!ok?' tgt':'')+'">⚠ '+esc(w)+'</div>':'')+'</div><div class="acts">'+
         (g[0]==='none'?'<button type="button" class="btn sm" data-act="editLot" data-id="'+esc(x.l.id)+'">Datum invullen</button>':ok?'<button type="button" class="btn sm" data-act="useUpLot" data-id="'+esc(x.l.id)+'">✓ Opgebruikt</button><button type="button" class="btn sm" data-act="useLot" data-id="'+esc(x.l.id)+'">Deel</button>':'')+'<button type="button" class="btn sm" data-act="moveLot" data-id="'+esc(x.l.id)+'">⇄</button><button type="button" class="btn sm danger" data-act="discardLot" data-id="'+esc(x.l.id)+'">🗑</button></div></div>'});
     if(g[0]==='ok'&&items.length>40)h+='<div class="small muted" style="padding:8px">+ '+(items.length-40)+' andere</div>';h+='</div></section>'});
   if(!rows.length)h+='<div class="card empty">Geen producten gevonden.</div>';return h};
@@ -2641,7 +2648,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.7 · 22-11-2026';
+const APP_VERSION='3.8 · 23-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -3253,6 +3260,81 @@ A.bulkOpen=()=>{go('scanner',{mode:'snel'});setTimeout(()=>A.bulkReview(),120)};
 (function(){const dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){return bulkDashCard()+dash.apply(this,arguments)}})();
 (function(){const r=Scanner.refresh;Scanner.refresh=function(){r.apply(this,arguments);if(UI.scan.mode==='snel'){const b=$('#bulk-panel');if(b)b.innerHTML=bulkPanelHtml()}}})();
 
+/* ===================== NIET DRINGEND: lang houdbare producten (drank, droge voeding…) ===================== */
+/* Twee keuzes per product: (1) een realistische einddatum = THT + een geschatte marge, of (2) negeren in "Eerst opgebruiken".
+   Een TGT (te gebruiken tot) wordt nooit verlengd of genegeerd: dat is een veiligheidsdatum. */
+const LONG_RULES=[
+  [/\b(whisk(e)?y|gin|rum|vodka|wodka|cognac|brandy|jenever|genever|calvados|grappa|tequila|mezcal|armagnac|absint|pastis|ouzo|schnaps|sake|eau[- ]de[- ]vie)\b/,3650,'Sterke drank','Sterke drank bederft praktisch niet. De THT is vooral een kwaliteitsdatum.',true],
+  [/\b(baileys|advocaat|roomlikeur|cream liqueur|eierlikeur)\b/,180,'Roomlikeur','Roomlikeur blijft ongeopend nog ± 6 maanden goed na de THT. Na opening in de koelkast bewaren.'],
+  [/\b(vermout|vermouth|martini|noilly|port|porto|sherry|madeira|marsala|pineau)\b/,730,'Versterkte wijn','Versterkte wijn (zoals vermout of porto) blijft ongeopend nog ± 2 jaar goed na de THT. Na opening ± 1 à 2 maanden in de koelkast.'],
+  [/\b(likeur|liqueur|amaretto|limoncello|cointreau|triple sec|grand marnier|kahlua|jägermeister|jagermeister|campari|aperol|bitter|ricard|safari|malibu|passoa|elixir)\b/,1095,'Likeur','Likeur blijft door het suiker- en alcoholgehalte nog jaren goed. Reken ruim ± 3 jaar na de THT.'],
+  [/\b(wijn|wine|cava|prosecco|champagne|crémant|cremant|rosé|rose wijn|lambrusco)\b/,730,'Wijn','Wijn blijft ongeopend meestal nog ± 2 jaar goed na de THT, liggend en koel bewaard.'],
+  [/\b(bier|pils|beer|tripel|dubbel|lager|stout|ipa|blond|kriek|geuze|witbier|alcoholvrij bier)\b/,180,'Bier','Bier blijft nog ± 6 maanden goed na de THT. De smaak wordt wel geleidelijk minder.'],
+  [/\b(water|spuitwater|bruiswater)\b/,365,'Water','Water in fles blijft nog ± 1 jaar goed na de THT.'],
+  [/\b(cola|frisdrank|limonade|tonic|ice ?tea|sprite|fanta|seven ?up|7up|ginger ale|bitter lemon|energy ?drink|siroop)\b/,180,'Frisdrank','Frisdrank blijft nog ± 6 maanden goed na de THT. Light-varianten verliezen sneller smaak.'],
+  [/\b(honing|suiker|zout|azijn|maizena|bakpoeder|bicarbonaat|gist)\b/,3650,'Bederft bijna niet','Dit bederft praktisch niet als het droog en afgesloten bewaard wordt.',true],
+  [/\b(pasta|spaghetti|macaroni|penne|fusilli|tagliatelle|lasagne|noedels|rijst|couscous|bulgur|quinoa|linzen|bloem|meel|havermout|polenta|griesmeel)\b/,365,'Droge voeding','Droge voeding blijft droog en afgesloten bewaard nog ± 1 jaar goed na de THT.'],
+  [/\b(blik|conserve|conserven|in blik|tomatenblokjes|passata|gepelde tomaten|kikkererwten|mais|maïs|tonijn|sardines|bonen in)\b/,365,'Conserven','Conserven blijven nog ± 1 jaar of langer goed na de THT, zolang het blik niet bol staat, roest of beschadigd is.'],
+  [/\b(kruiden|specerij|peper|paprikapoeder|kaneel|nootmuskaat|oregano|komijn|kerrie|curry|tijm|laurier)\b/,365,'Kruiden','Gedroogde kruiden zijn niet onveilig na de THT, ze verliezen alleen geleidelijk smaak. Reken ± 1 jaar.'],
+  [/\b(koffie|thee|cacao)\b/,365,'Koffie of thee','Koffie en thee blijven nog ± 1 jaar goed na de THT, de smaak wordt wel minder.'],
+  [/\b(chocolade|choco|praline|snoep|drop|gummi|lolly)\b/,180,'Snoep','Chocolade en snoep blijven nog ± 6 maanden goed na de THT. Witte uitslag op chocolade is onschuldig.'],
+  [/\b(olie|olijfolie|zonnebloemolie)\b/,180,'Olie','Olie blijft ongeopend nog ± 6 maanden goed na de THT. Ruikt ze ranzig, gooi ze dan weg.'],
+  [/\b(mosterd|ketchup|sojasaus|worcester|tabasco|sambal)\b/,180,'Saus in fles','Deze saus blijft ongeopend nog ± 6 maanden goed na de THT.']];
+const LONG_SUBS={'Dranken':[180,'Dranken','Dranken in fles of blik blijven meestal nog ± 6 maanden goed na de THT.'],'Pasta':[365,'Droge voeding',''],'Rijst':[365,'Droge voeding',''],'Noedels':[365,'Droge voeding',''],'Bloem en meel':[180,'Droge voeding',''],'Suiker en zoetstoffen':[3650,'Bederft bijna niet',''],'Peulvruchten':[365,'Droge voeding',''],'Groenten in blik of bokaal':[365,'Conserven',''],'Fruit in blik of bokaal':[365,'Conserven',''],'Tomatenproducten':[365,'Conserven',''],'Oliën en azijnen':[180,'Olie of azijn',''],'Snoep en chocolade':[180,'Snoep',''],'Koekjes':[90,'Koekjes','Koekjes blijven nog ± 3 maanden goed na de THT, maar worden wel minder krokant.'],'Chips en snacks':[60,'Chips','Chips blijven nog ± 2 maanden goed na de THT, maar worden wel minder krokant.']};
+/* Niet voor verse producten: wat in de koelkast of diepvries hoort, krijgt geen extra marge (behalve drank). */
+function longGuess(p){if(!p)return null;const n=norm([p.name,p.kind||''].join(' '));const fresh=/^(Koeling|Vlees, vis en gevogelte|Groenten en fruit|Brood en bakkerij|Diepvries)$/.test(p.category||'');
+  for(const r of LONG_RULES){if(r[0].test(n)){const drink=r[2]!=='Droge voeding'&&r[2]!=='Conserven'&&r[2]!=='Kruiden'&&r[2]!=='Snoep'&&r[2]!=='Olie'&&r[2]!=='Saus in fles'&&r[2]!=='Koffie of thee'&&r[2]!=='Bederft bijna niet';if(fresh&&!drink)continue;return {days:r[1],label:r[2],note:r[3],ignore:!!r[4]}}}
+  const s=LONG_SUBS[p.sub];if(s&&!fresh)return {days:s[0],label:s[1],note:s[2]||('Reken ± '+longSpan(s[0])+' na de THT.')};return null}
+function longSpan(d){d=Number(d)||0;return d>=3600?'10 jaar of langer':d>=700?Math.round(d/365)+' jaar':d>=360?'1 jaar':d>=170?'6 maanden':d>=85?'3 maanden':d>=55?'2 maanden':d+' dagen'}
+/* Wat in het rode blok staat en eigenlijk lang houdbaar is. */
+function longCandidates(){return M.useFirst().filter(x=>x.e.type==='THT'&&M.productDomain(x.p)!=='medicijnen'&&longGuess(x.p))}
+const LONG_PRESETS=[[90,'+3 mnd'],[180,'+6 mnd'],[365,'+1 jaar'],[730,'+2 jaar'],[1825,'+5 jaar']];
+let LS_CALM=null;
+function calmBody(){const c=LS_CALM;const p=M.S.products[c.pid];const l=c.lot&&M.S.lots[c.lot];const g=longGuess(p);const tht=l&&l.dateType!=='TGT'&&l.expiryDate?l.expiryDate:'';
+  let h='<p style="margin-top:0">Kies wat je wilt doen met <b>'+esc(p.name)+'</b>. Het geldt voor alle partijen van dit product, ook voor wat je later koopt.</p>';
+  if(l&&l.dateType==='TGT')return h+'<div class="note warn">Dit product heeft een <b>TGT</b> (te gebruiken tot). Dat is een veiligheidsdatum: die kan de app niet verlengen of negeren.</div>';
+  const days=c.days!=null?c.days:(g?g.days:365);
+  h+='<div class="card calm-opt'+(c.choice==='real'?' on':'')+'" data-glean-id="calm-real"><label class="check" style="font-weight:600"><input type="radio" name="calm" data-change="calmPick" data-v="real"'+(c.choice==='real'?' checked':'')+'> 📅 Realistische einddatum gebruiken</label>'+
+    (g?'<div class="small" style="margin:6px 0 0 28px"><b>Schatting voor '+esc(g.label.toLowerCase())+':</b> '+esc(g.note)+'</div>':'<div class="small muted" style="margin:6px 0 0 28px">Geen standaardschatting voor dit product. Kies hieronder zelf een marge.</div>')+
+    '<div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0 0 28px">'+LONG_PRESETS.map(x=>'<button type="button" class="chip'+(Number(days)===x[0]?' on':'')+'" aria-pressed="'+(Number(days)===x[0])+'" data-act="calmDays" data-d="'+x[0]+'">'+x[1]+'</button>').join('')+(g&&!LONG_PRESETS.some(x=>x[0]===g.days)?'<button type="button" class="chip'+(Number(days)===g.days?' on':'')+'" data-act="calmDays" data-d="'+g.days+'">+'+esc(longSpan(g.days))+'</button>':'')+'</div>'+
+    (tht?'<div class="small" style="margin:8px 0 0 28px">THT '+fmtDate(tht)+' → <b>realistisch tot '+fmtDate(addDays(tht,Number(days)))+'</b></div>':'')+'</div>';
+  h+='<div class="card calm-opt'+(c.choice==='ignore'?' on':'')+'" style="margin-top:10px" data-glean-id="calm-ignore"><label class="check" style="font-weight:600"><input type="radio" name="calm" data-change="calmPick" data-v="ignore"'+(c.choice==='ignore'?' checked':'')+'> 🙈 Negeren in "Eerst opgebruiken"</label><div class="small" style="margin:6px 0 0 28px">'+esc(p.name)+' verschijnt niet meer in het rode blok en je krijgt er geen meldingen meer over, ook niet in de ochtendmail. De datum blijft wel zichtbaar in je voorraad.'+(g&&g.ignore?' <b>Aanbevolen voor dit product.</b>':'')+'</div></div>';
+  return h}
+A.calmOpen=d=>{const l=M.S.lots[d.id];const pid=l?l.productId:d.pid;const p=M.S.products[pid];if(!p)return;const g=longGuess(p);
+  LS_CALM={pid,lot:l?l.id:'',choice:g&&g.ignore?'ignore':'real',days:Number(p.realDays)>0?Number(p.realDays):g?g.days:365};
+  openModal({title:'Niet dringend: '+p.name,gid:'dialog-calm',body:calmBody,foot:()=>'<button type="button" class="btn" data-act="closeModal">Annuleren</button>'+(l&&l.dateType==='TGT'?'':'<button type="button" class="btn primary" data-act="calmSave">'+(LS_CALM.choice==='ignore'?'Negeren':'Datum gebruiken')+'</button>')})};
+A.calmPick=(d,el)=>{if(el.checked){LS_CALM.choice=d.v;paintModal()}};
+A.calmDays=d=>{LS_CALM.days=Number(d.d);LS_CALM.choice='real';paintModal()};
+function longApply(pid,choice,days,src){const p=M.S.products[pid];if(!p)return;
+  if(choice==='ignore')M.saveProduct({id:pid,noUrgent:true});
+  else M.saveProduct({id:pid,realDays:Math.max(1,Math.round(Number(days)||0)),realSrc:src||'geschat',noUrgent:false})}
+A.calmSave=()=>{const c=LS_CALM;const p=M.S.products[c.pid];const before={noUrgent:!!p.noUrgent,realDays:Number(p.realDays)||0,realSrc:p.realSrc||''};const g=longGuess(p);
+  longApply(c.pid,c.choice,c.days,g&&Number(c.days)===g.days?'geschat':'zelf');closeModal();
+  toast(c.choice==='ignore'?p.name+' staat niet meer in "Eerst opgebruiken".':p.name+': realistische houdbaarheid THT + '+longSpan(c.days)+'.','',{label:'Ongedaan maken',fn:()=>{M.saveProduct(Object.assign({id:c.pid},before));toast('Hersteld.')}})};
+/* Alles in één keer: lang houdbare producten uit het rode blok */
+let LS_BULK=null;
+function longBulkBody(){const rows=LS_BULK.rows;if(!rows.length)return '<div class="empty">Niets meer na te kijken.</div>';
+  let h='<p style="margin-top:0">Deze producten staan in "Eerst opgebruiken", maar blijven waarschijnlijk veel langer goed. Kies per product, of laat de voorstellen staan.</p><div class="list">';
+  rows.forEach((r,i)=>{const p=M.S.products[r.pid];const g=longGuess(p);const tht=r.tht;
+    h+='<div class="li" style="align-items:flex-start" data-glean-id="long-row"><div class="grow" style="min-width:0"><div class="main-t">'+esc(p.name)+'</div><div class="sub-t">'+esc(g.label)+(tht?' · THT '+fmtDate(tht)+' → realistisch tot '+fmtDate(addDays(tht,g.days)):'')+'</div><div class="small muted">'+esc(g.note)+'</div></div>'+
+      '<select class="inp" style="max-width:190px" aria-label="Keuze voor '+esc(p.name)+'" data-change="longPick" data-i="'+i+'">'+sel(r.choice,[['real','📅 Realistische datum'],['ignore','🙈 Negeren'],['skip','Niets doen']])+'</select></div>'});
+  return h+'</div>'}
+A.longBulk=()=>{const seen={};const rows=[];longCandidates().forEach(x=>{if(seen[x.p.id])return;seen[x.p.id]=1;const g=longGuess(x.p);rows.push({pid:x.p.id,tht:x.l.expiryDate,choice:g.ignore?'ignore':'real'})});
+  LS_BULK={rows};openModal({title:'Lang houdbaar? Nakijken',gid:'dialog-long-bulk',wide:true,body:longBulkBody,foot:()=>{const n=LS_BULK.rows.filter(r=>r.choice!=='skip').length;return '<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="longBulkSave"'+(n?'':' disabled')+'>Toepassen ('+n+')</button>'}})};
+A.longPick=(d,el)=>{const r=LS_BULK.rows[Number(d.i)];if(r){r.choice=el.value;paintModal()}};
+A.longBulkSave=()=>{const todo=LS_BULK.rows.filter(r=>r.choice!=='skip');const before=todo.map(r=>{const p=M.S.products[r.pid];return {id:r.pid,noUrgent:!!p.noUrgent,realDays:Number(p.realDays)||0,realSrc:p.realSrc||''}});
+  M.tx(()=>todo.forEach(r=>{const g=longGuess(M.S.products[r.pid]);longApply(r.pid,r.choice,g.days,'geschat')}));closeModal();
+  const ni=todo.filter(r=>r.choice==='ignore').length,nr=todo.length-ni;
+  toast([nr?nr+' met realistische datum':'',ni?ni+' genegeerd':''].filter(Boolean).join(', ')+'.','',{label:'Ongedaan maken',fn:()=>{M.tx(()=>before.forEach(b=>M.saveProduct(b)));toast('Hersteld.')}})};
+/* Bij het product: tonen en terugdraaien */
+function longDetail(p){const parts=[];
+  if(Number(p.realDays)>0)parts.push('<span class="tag" title="Wordt opgeteld bij de THT">📅 Realistisch: THT + '+esc(longSpan(p.realDays))+(p.realSrc==='geschat'?' · geschat':'')+'</span><button type="button" class="btn sm ghost" data-act="longReset" data-id="'+esc(p.id)+'" data-k="real">Wissen</button>');
+  if(p.noUrgent)parts.push('<span class="tag">🙈 Niet in "Eerst opgebruiken"</span><button type="button" class="btn sm ghost" data-act="longReset" data-id="'+esc(p.id)+'" data-k="urgent">Weer tonen</button>');
+  if(!parts.length)return '<div class="row small" style="margin-top:8px"><button type="button" class="btn sm ghost" data-act="calmOpen" data-pid="'+esc(p.id)+'" data-glean-id="calm-from-product">⏳ Lang houdbaar? Niet dringend maken</button></div>';
+  return '<div class="row small" style="margin-top:8px;gap:6px" data-glean-id="long-status">'+parts.join('')+'</div>'}
+A.longReset=d=>{if(d.k==='real')M.saveProduct({id:d.id,realDays:0,realSrc:''});else M.saveProduct({id:d.id,noUrgent:false});toast('Aangepast.')};
+function expLabel(e){return typeTag(e)+' '+fmtDate(e.date)+(e.tht?' <span class="muted small">(THT '+fmtDate(e.tht)+')</span>':'')+(e.calm?' <span class="tag" title="Niet in Eerst opgebruiken">🙈 niet dringend</span>':'')}
+
 /* ===================== INSTELLINGEN, MELDINGEN, EXPORT, OPSTART ===================== */
 function ageOpts(cur){const o=[['','— leeftijd —'],[0,'jonger dan 1 jaar']];for(let i=1;i<=17;i++)o.push([i,i+' jaar']);return sel(cur==null?'':cur,o)}
 function householdSection(){const st=M.settings();const h=M.household();const kids=h.children;
@@ -3517,7 +3599,7 @@ function confirmSpeech(){if(typeof CF==='undefined'||!CF||!CF.pref)return '';con
   if(p.expiryDate)parts.push((p.dateType==='TGT'?'Te gebruiken tot ':'Ten minste houdbaar tot ')+fmtDate(p.expiryDate)+'.');else parts.push('Nog geen vervaldatum.');
   return parts.join(' ')}
 A.cfSpeak=()=>{cfSnapshot();A11y.speak(confirmSpeech(),true)};
-function expirySpeech(){const rows=M.lots().map(l=>({l,p:M.S.products[l.productId],e:M.lotExpiry(l)})).filter(x=>x.p&&x.e&&x.e.days!=null&&x.e.days<=7).sort((a,b)=>a.e.days-b.e.days);
+function expirySpeech(){const rows=M.lots().map(l=>({l,p:M.S.products[l.productId],e:M.lotExpiry(l)})).filter(x=>x.p&&x.e&&!x.e.calm&&x.e.days!=null&&x.e.days<=7).sort((a,b)=>a.e.days-b.e.days);
   if(!rows.length)return 'Goed nieuws: deze week vervalt er niets.';
   const list=rows.slice(0,8).map(x=>x.p.name+', in '+M.locName(x.l.locationId)+', '+dayPhrase(x.e.days)).join('. ');
   return (rows.length===1?'Eén product':rows.length+' producten')+' vervallen binnen een week. '+list+'.'+(rows.length>8?' En nog '+(rows.length-8)+' andere.':'')}
