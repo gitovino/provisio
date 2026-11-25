@@ -962,9 +962,29 @@ function createModel(adapter,hooks){hooks=hooks||{};
       if(limits.wachtUren>0&&h<limits.wachtUren){const nx=new Date(Date.parse(last.ts)+limits.wachtUren*3600000);out.push({sev:2,txt:'Nog niet: wacht minstens '+limits.wachtUren+' uur tussen twee innames. Volgende inname vanaf '+pad(nx.getHours())+':'+pad(nx.getMinutes())+(todayStr(nx)!==todayStr()?' ('+fmtDate(todayStr(nx))+')':'')+'.',next:nx.toISOString()})}
       if(limits.maxPerDag>0&&tot>=limits.maxPerDag)out.push({sev:2,txt:'Maximum voor 24 uur bereikt ('+fmtNum(limits.maxPerDag)+').'})}
     return out.sort((a,b)=>b.sev-a.sev)}
-  /* Zoekt in je eigen kast wat volgens de bijsluiter helpt tegen een klacht. */
+  /* Zoekt in je eigen kast wat volgens de bijsluiter helpt tegen een klacht.
+     Een klacht wordt ook vertaald naar bredere termen en werkzame stoffen: "hoofdpijn" vindt zo ook een middel tegen "pijn" (paracetamol).
+     Een rechtstreekse vermelding telt zwaarder dan een verwante term. Het blijft een hulp om te zoeken: de bijsluiter en de innamecontrole beslissen. */
+  const PAIN=['pijn','pijnstill','paracetamol','ibuprofen','acetylsalicylzuur','naproxen','diclofenac'];
+  const ALLERGY=['allergie','allergisch','hooikoorts','antihistamin','cetirizine','levocetirizine','loratadine','desloratadine','fexofenadine','ebastine','bilastine'];
+  const DIARR=['diarree','loperamide','racecadotril'],CONST=['verstopping','constipatie','obstipatie','laxeer','laxatief','macrogol','lactulose','bisacodyl','sennoside','picosulfaat'];
+  const ACID=['maagzuur','zuurbranden','brandend maagzuur','maag','omeprazol','esomeprazol','pantoprazol','calciumcarbonaat','alginaat'],NAUSEA=['misselijk','braken','reisziekte','wagenziekte','domperidon','meclozine','dimenhydrinaat','cinnarizine'];
+  const COUGH=['hoest','dextromethorfan','broomhexine','acetylcysteine','carbocisteine','ambroxol','pholcodine','butamiraat'],WOUND=['wond','ontsmet','chloorhexidine','povidon','jodium','pleister','verband'];
+  const MED_SYN={migraine:['hoofdpijn'].concat(PAIN),koorts:['koorts','paracetamol','ibuprofen','acetylsalicylzuur'],griep:['griep','koorts','verkoudheid'].concat(PAIN),
+    verkoudheid:['verkoudheid','verkouden','neus','keel','koorts'],verkouden:['verkoudheid','verkouden','neus','keel','koorts'],
+    hooikoorts:ALLERGY,allergie:ALLERGY,allergisch:ALLERGY,niezen:ALLERGY,loopneus:ALLERGY.concat(['neus','verkoudheid']),jeuk:['jeuk','insectenbeet','muggenbeet'].concat(ALLERGY),netelroos:['netelroos','urticaria','jeuk'].concat(ALLERGY),
+    diarree:DIARR,buikloop:DIARR,verstopping:CONST,constipatie:CONST,obstipatie:CONST,maagzuur:ACID,zuurbranden:ACID,oprispingen:ACID,indigestie:ACID,
+    misselijk:NAUSEA,misselijkheid:NAUSEA,braken:NAUSEA,overgeven:NAUSEA,reisziekte:NAUSEA,wagenziekte:NAUSEA,zeeziekte:NAUSEA,
+    hoest:COUGH,hoesten:COUGH,kriebelhoest:COUGH,slijm:COUGH,neusverstopping:['neus','verstopte neus','xylometazoline','oxymetazoline','zoutoplossing'],verstopte:['neus','xylometazoline','oxymetazoline'],
+    slapeloosheid:['slaap','slapen','inslapen','melatonine'],slapen:['slaap','slapen','inslapen','melatonine'],
+    wonde:WOUND,wond:WOUND,schaafwonde:WOUND,snijwonde:WOUND,brandwonde:['brandwond','verbranding'].concat(WOUND),kramp:['kramp','krampen','butylscopolamine'].concat(PAIN),krampen:['kramp','krampen','butylscopolamine'].concat(PAIN)};
+  function medTerms(w){let t=MED_SYN[w]||[];if(w.includes('pijn'))t=t.concat(PAIN);if(w.length>6&&w.endsWith('pijn')){const part=w.slice(0,-4);if(part.length>=3)t=t.concat([part])}  // keelpijn → ook "keel"
+    return t.filter((x,i)=>x!==w&&t.indexOf(x)===i)}
   function medFind(q,extra){const ws=norm(q).split(/[^a-z0-9]+/).filter(w=>w.length>=3);if(!ws.length)return [];
-    return medProducts().map(p=>{const m=p.med||{};const hay=norm([p.name,p.sub,(m.indicaties||[]).join(' '),medSubstances(p).join(' '),(extra&&extra(p))||''].join(' '));const sc=ws.filter(w=>hay.includes(w)||(w.length>=5&&hay.includes(w.slice(0,w.length-1)))).length;return {p,sc,stock:productTotal(p.id)>0}}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc||(b.stock-a.stock))}
+    const has=(hay,w)=>hay.includes(w)||(w.length>=5&&hay.includes(w.slice(0,w.length-1)));
+    return medProducts().map(p=>{const m=p.med||{};const hay=norm([p.name,p.sub,(m.indicaties||[]).join(' '),medSubstances(p).join(' '),(extra&&extra(p))||''].join(' '));let sc=0;const via=[];
+      ws.forEach(w=>{if(has(hay,w)){sc+=3;return}const hit=medTerms(w).find(t=>has(hay,norm(t)));if(hit){sc+=1;via.push({w,t:hit})}});
+      return {p,sc,via,stock:productTotal(p.id)>0}}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc||(b.stock-a.stock))}
   /* ---------- Houdbaar na opening: bron 'etiket' | 'geschat' (Gemini) | 'zelf' | 'nvt' (niet van toepassing). Leeg = nog onbekend. ---------- */
   function openShelfSrc(p){if(!p)return '';if(p.openShelfSrc)return p.openShelfSrc;return Number(p.openShelfDays)>0?'zelf':''}
   function openShelfTodo(){return products().filter(p=>!Number(p.openShelfDays)&&!openShelfSrc(p)&&!isMed(p)&&productDomain(p)!=='huishouden')}
@@ -2905,7 +2925,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.13 · 24-11-2026';
+const APP_VERSION='3.14 · 25-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -3143,7 +3163,8 @@ VIEW_RENDER.medicijnen=function(){const mem=M.members();const meds=M.medProducts
   h+=mem.length?'<div class="row" style="margin-top:8px">'+mem.map(m=>'<button type="button" class="chip" data-act="memEdit" data-id="'+esc(m.id)+'">👤 '+esc(m.name)+(memberLine(m)?' <span class="muted small">'+esc(memberLine(m))+'</span>':'')+'</button>').join('')+'</div>':'<div class="empty">Voeg je gezinsleden toe. Leeftijd en gewicht zijn nodig voor de juiste dosis.</div>';
   h+='<div class="hint" style="margin-top:6px">Namen blijven op je toestel en in je eigen Google Sheet. Naar Gemini gaan alleen leeftijd, gewicht, allergieën, aandoeningen en vaste medicatie.</div></section>';
   h+='<section class="card" data-glean-id="med-zoek"><h2 class="panel-title">Waar heb je last van?</h2><div class="row"><input class="inp grow" id="med-q" value="'+esc(q)+'" placeholder="bv. hoofdpijn, koorts, hooikoorts" data-enter="medFind" aria-label="Klacht"><button type="button" class="btn" data-act="medFind">Zoeken in mijn kast</button></div>';
-  if(q){const r=M.medFind(q,p=>{const x=(lfSecs(p.id)||[]).find(z=>z.nr===1);return x?x.tekst.slice(0,3000):''});h+=r.length?'<div class="list" style="margin-top:8px">'+r.slice(0,6).map(x=>medRow(x.p)).join('')+'</div>':'<div class="empty">Niets in je kast vermeldt "'+esc(q)+'" in de bijsluiter. Vraag raad aan je apotheker.</div>'}
+  if(q){const r=M.medFind(q,p=>{const x=(lfSecs(p.id)||[]).find(z=>z.nr===1);return x?x.tekst.slice(0,3000):''});const viaTxt=r.slice(0,6).filter(x=>x.via.length).map(x=>esc(x.p.name)+' (via “'+esc(x.via.map(v=>v.t).filter((t,i,a)=>a.indexOf(t)===i).join('”, “'))+'”)');
+    h+=r.length?'<div class="list" style="margin-top:8px">'+r.slice(0,6).map(x=>medRow(x.p)).join('')+'</div>'+(viaTxt.length?'<div class="hint" data-glean-id="med-via" style="margin-top:6px">Niet letterlijk "'+esc(q)+'" in de bijsluiter, wel een verwante term: '+viaTxt.join(', ')+'. Lees in de bijsluiter of het past bij jouw klacht.</div>':''):'<div class="empty">Niets in je kast vermeldt "'+esc(q)+'" in de bijsluiter. Vraag raad aan je apotheker.</div>'}
   h+='</section><section class="card" data-glean-id="med-kast"><div class="row between"><h2 class="panel-title">In de kast ('+meds.length+')</h2><button type="button" class="btn sm" data-act="go" data-view="scanner" data-pmode="barcode">📷 Doos scannen</button></div>';
   h+=meds.length?'<div class="list" style="margin-top:6px">'+meds.map(medRow).join('')+'</div>':'<div class="empty">Nog geen geneesmiddelen. Kies bovenaan "Medicijnkast" en scan de doos (de DataMatrix-code bevat ook de vervaldatum en het lotnummer).</div>';
   h+='</section>';const ins=M.intakes().slice(0,25);
