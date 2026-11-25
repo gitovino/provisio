@@ -2925,7 +2925,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.14 · 25-11-2026';
+const APP_VERSION='3.15 · 25-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -3163,7 +3163,9 @@ VIEW_RENDER.medicijnen=function(){const mem=M.members();const meds=M.medProducts
   h+=mem.length?'<div class="row" style="margin-top:8px">'+mem.map(m=>'<button type="button" class="chip" data-act="memEdit" data-id="'+esc(m.id)+'">👤 '+esc(m.name)+(memberLine(m)?' <span class="muted small">'+esc(memberLine(m))+'</span>':'')+'</button>').join('')+'</div>':'<div class="empty">Voeg je gezinsleden toe. Leeftijd en gewicht zijn nodig voor de juiste dosis.</div>';
   h+='<div class="hint" style="margin-top:6px">Namen blijven op je toestel en in je eigen Google Sheet. Naar Gemini gaan alleen leeftijd, gewicht, allergieën, aandoeningen en vaste medicatie.</div></section>';
   h+='<section class="card" data-glean-id="med-zoek"><h2 class="panel-title">Waar heb je last van?</h2><div class="row"><input class="inp grow" id="med-q" value="'+esc(q)+'" placeholder="bv. hoofdpijn, koorts, hooikoorts" data-enter="medFind" aria-label="Klacht"><button type="button" class="btn" data-act="medFind">Zoeken in mijn kast</button></div>';
-  if(q){const r=M.medFind(q,p=>{const x=(lfSecs(p.id)||[]).find(z=>z.nr===1);return x?x.tekst.slice(0,3000):''});const viaTxt=r.slice(0,6).filter(x=>x.via.length).map(x=>esc(x.p.name)+' (via “'+esc(x.via.map(v=>v.t).filter((t,i,a)=>a.indexOf(t)===i).join('”, “'))+'”)');
+  const symK=q?symKey(q):'';const symR=symK&&symCached(symK);
+  if(q&&symR)h+=symBlock(q,symR);
+  else if(q){if(medAI())h+=symStatus(q);const r=M.medFind(q,p=>{const x=(lfSecs(p.id)||[]).find(z=>z.nr===1);return x?x.tekst.slice(0,3000):''});const viaTxt=r.slice(0,6).filter(x=>x.via.length).map(x=>esc(x.p.name)+' (via “'+esc(x.via.map(v=>v.t).filter((t,i,a)=>a.indexOf(t)===i).join('”, “'))+'”)');
     h+=r.length?'<div class="list" style="margin-top:8px">'+r.slice(0,6).map(x=>medRow(x.p)).join('')+'</div>'+(viaTxt.length?'<div class="hint" data-glean-id="med-via" style="margin-top:6px">Niet letterlijk "'+esc(q)+'" in de bijsluiter, wel een verwante term: '+viaTxt.join(', ')+'. Lees in de bijsluiter of het past bij jouw klacht.</div>':''):'<div class="empty">Niets in je kast vermeldt "'+esc(q)+'" in de bijsluiter. Vraag raad aan je apotheker.</div>'}
   h+='</section><section class="card" data-glean-id="med-kast"><div class="row between"><h2 class="panel-title">In de kast ('+meds.length+')</h2><button type="button" class="btn sm" data-act="go" data-view="scanner" data-pmode="barcode">📷 Doos scannen</button></div>';
   h+=meds.length?'<div class="list" style="margin-top:6px">'+meds.map(medRow).join('')+'</div>':'<div class="empty">Nog geen geneesmiddelen. Kies bovenaan "Medicijnkast" en scan de doos (de DataMatrix-code bevat ook de vervaldatum en het lotnummer).</div>';
@@ -3175,7 +3177,39 @@ function medRow(p){const li=medLotInfo(p);const m=p.med||{};const subs=M.medSubs
   return '<div class="item"><div class="grow"><b>'+esc(p.name)+'</b>'+(subs.length?' <span class="muted small">'+esc((m.stoffen||[]).map(s=>[s.naam,s.sterkte].filter(Boolean).join(' ')).join(', '))+'</span>':'')+
     '<div class="small"><span class="tag '+li.cls+'">'+esc(li.txt)+'</span> '+(m.link?'<span class="tag">📄 Officiële bijsluiter</span>':hasLeaflet(p)?'<span class="tag">📄 Bijsluiter (foto of tekst)</span>':'<span class="tag lv-yellow">Bijsluiter ontbreekt</span>')+(m.voorschrift?' <span class="tag">Op voorschrift</span>':'')+((m.indicaties||[]).length?' <span class="muted">'+esc(m.indicaties.slice(0,4).join(', '))+'</span>':'')+'</div></div>'+
     '<button type="button" class="btn sm" data-act="leaflet" data-id="'+esc(p.id)+'">📄</button><button type="button" class="btn sm primary" data-act="intake" data-id="'+esc(p.id)+'">Innemen</button></div>'}
-A.medFind=()=>{UI.medQ=(($('#med-q')||{}).value||'').trim();render()};
+A.medFind=()=>{UI.medQ=(($('#med-q')||{}).value||'').trim();SYM.err='';render();if(UI.medQ&&medAI()&&!symCached(symKey(UI.medQ)))symRun(UI.medQ)};
+/* ---------- Klacht aftoetsen met AI (Gemini via je eigen Apps Script) ----------
+   Gemini kijkt voor elk geneesmiddel in je kast of de klacht valt onder waarvoor het dient (bijsluiter, "waarvoor" en werkzame stof).
+   Namen van gezinsleden gaan niet mee. Een antwoord blijft 7 dagen bewaard op dit toestel zolang je kast niet verandert, zodat dezelfde vraag geen nieuwe aanvraag kost.
+   Zonder Google-koppeling of bij een fout blijft het snelle zoeken (zonder AI) werken. */
+const SYM={busy:'',err:'',errCode:''};const SYM_TTL=7*86400000;
+function symMeds(){return M.medProducts().map(p=>{const m=p.med||{};const c=(lfSecs(p.id)||[]).find(z=>z.nr===1);
+    return {id:p.id,naam:scrubNames(p.name),stoffen:M.medSubstances(p).slice(0,6),vorm:String(m.vorm||''),categorie:p.sub||p.category||'',waarvoor:(m.indicaties||[]).slice(0,12),kern:String(c?c.tekst:(m.kern||'')).slice(0,800),voorraad:M.productTotal(p.id)>0}})
+  .sort((a,b)=>(b.voorraad-a.voorraad)).slice(0,40)}
+function symHash(s){let x=5381;for(let i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return (x>>>0).toString(36)}
+function symKey(q){return 'sym:'+symHash(norm(q)+'|'+JSON.stringify(symMeds().map(m=>[m.id,m.voorraad,m.waarvoor,m.stoffen])))}
+function symCached(k){const c=LS.get(k,null);return c&&c.at&&Date.now()-c.at<SYM_TTL?c.r:null}
+async function symRun(q){const k=symKey(q);if(SYM.busy===k)return;SYM.busy=k;SYM.err='';SYM.errCode='';render();
+  try{const j=await Sync.call('aiSymptom',{klacht:scrubNames(q).slice(0,200),meds:symMeds()},null,120000);if(!j||!j.ok){const e=new Error(j&&j.error||'Geen antwoord.');e.code=j&&j.code;throw e}
+    LS.set(k,{at:Date.now(),r:j.result})}
+  catch(e){SYM.errCode=e.code||'';SYM.err=/Onbekende actie/i.test(e.message||'')?(SYM.errCode='old','Je Google Apps Script kent de AI-controle nog niet. Vervang Code.gs door versie 12 en implementeer een nieuwe versie.'):(e.message||String(e))}
+  finally{if(SYM.busy===k)SYM.busy='';if(UI.view==='medicijnen')render()}}
+A.symRun=()=>{const q=UI.medQ||'';if(q)symRun(q)};
+A.symRedo=()=>{const q=UI.medQ||'';if(!q)return;try{localStorage.removeItem('svb:'+symKey(q))}catch(e){}symRun(q)};
+function symStatus(q){if(SYM.busy===symKey(q))return '<div class="note" role="status" data-glean-id="sym-busy" style="margin-top:8px">⏳ AI kijkt na welke middelen uit je kast passen bij "'+esc(q)+'"…</div>';
+  if(SYM.err)return '<div class="note warn" role="alert" data-glean-id="sym-error" style="margin-top:8px">AI-controle lukte niet: '+esc(SYM.err)+(SYM.errCode==='old'?'':' <button type="button" class="btn sm" data-act="symRun">Opnieuw</button>')+'<div class="small">Hieronder het snelle zoeken zonder AI.</div></div>';
+  return '<div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-act="symRun" data-glean-id="sym-run">✨ Laat AI nakijken wat past</button></div>'}
+function symBlock(q,r){const by={};(r.middelen||[]).forEach(x=>{by[x.id]=x});const meds=M.medProducts();
+  const pick=lvl=>meds.filter(p=>by[p.id]&&by[p.id].past===lvl).sort((a,b)=>(M.productTotal(b.id)>0)-(M.productTotal(a.id)>0));const ja=pick('ja'),mog=pick('mogelijk');
+  let h='<div data-glean-id="sym-result" style="margin-top:8px">';
+  if(r.dringend)h+='<div class="note warn" role="alert" data-glean-id="sym-urgent">🚨 '+esc(r.waarschuwing||'Deze klacht kan dringend zijn.')+'<div class="small">Huisarts of wachtdienst: 1733 · Noodgeval: 112 · Antigifcentrum: 070 245 245</div></div>';
+  const row=p=>{const x=by[p.id];const tag=x.past==='ja'?(x.basis==='bijsluiter'?'<span class="tag lv-green">✓ Past volgens de bijsluiter</span>':'<span class="tag lv-green">✓ Past volgens de werkzame stof</span>'):'<span class="tag lv-yellow">◐ Past mogelijk</span>';
+    return medRow(p)+'<div class="small" style="margin:-2px 0 10px 4px">'+tag+' '+esc(x.reden||'')+(x.citaat?'<div class="muted" style="margin-top:3px;border-left:3px solid var(--theme-border-light,#ccc);padding-left:8px">“'+esc(x.citaat)+'”</div>':'')+(M.productTotal(p.id)>0?'':' <span class="muted">· niet meer in voorraad</span>')+'</div>'};
+  if(ja.length||mog.length){if(ja.length)h+='<div class="eyebrow">Past bij "'+esc(q)+'"</div><div class="list">'+ja.map(row).join('')+'</div>';if(mog.length)h+='<div class="eyebrow" style="margin-top:6px">Past mogelijk</div><div class="list">'+mog.map(row).join('')+'</div>'}
+  else h+='<div class="empty">Volgens de AI-controle past niets in je kast bij "'+esc(q)+'". Vraag raad aan je apotheker.</div>';
+  if(r.waarschuwing&&!r.dringend)h+='<div class="hint" style="margin-top:6px">⚠️ '+esc(r.waarschuwing)+'</div>';
+  h+='<div class="row" style="margin-top:6px"><span class="hint grow" style="margin:0">✨ Nagekeken met AI (Gemini via je Google Apps Script). Lees altijd de bijsluiter; met Innemen controleert de app de dosis per persoon.</span><button type="button" class="btn sm ghost" data-act="symRedo"'+(SYM.busy?' disabled':'')+'>↻ Opnieuw nakijken</button></div></div>';
+  return h}
 A.intakeDel=d=>confirmDlg('Deze inname verwijderen?','Verwijderen',()=>{M.deleteIntake(d.id);toast('Inname verwijderd.')});
 function confirmDlg(text,ok,fn){openModal({title:'Bevestigen',body:'<p>'+esc(text)+'</p>',foot:'<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="confirmOk">'+esc(ok)+'</button>',onOk:fn})}
 
