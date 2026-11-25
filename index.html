@@ -72,6 +72,11 @@ details.icopick>summary{list-style:none;cursor:pointer;display:inline-flex;align
 .ip-b{font-size:24px;height:46px;border-radius:10px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);color:var(--md-sys-color-on-surface);cursor:pointer;padding:0}
 .ip-b[aria-pressed="true"]{outline:3px solid var(--md-sys-color-primary);outline-offset:1px}
 .brand-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+/* Uitleg bij knoppen (tooltip) */
+.tip{position:fixed;left:0;top:0;z-index:10000;max-width:300px;padding:8px 11px;border-radius:8px;background:var(--md-sys-color-inverse-surface);color:var(--md-sys-color-inverse-on-surface);font:500 14px/1.4 var(--md-ref-typeface-plain);box-shadow:var(--md-sys-elevation-level2);pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s}
+.tip.on{opacity:1;visibility:visible}html.rm .tip{transition:none}@media (prefers-reduced-motion:reduce){.tip{transition:none}}
+html.hc .tip{outline:2px solid var(--md-sys-color-on-surface)}
+html[data-pal='avond'] .tip{background:var(--md-sys-color-surface-container-highest);color:var(--md-sys-color-on-surface);border:1px solid var(--md-sys-color-outline)}
 
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -3004,7 +3009,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.17 · 25-11-2026';
+const APP_VERSION='3.18 · 25-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -3695,49 +3700,114 @@ const LONG_RULES=[
   [/\b(olie|olijfolie|zonnebloemolie)\b/,180,'Olie','Olie blijft ongeopend nog ± 6 maanden goed na de THT. Ruikt ze ranzig, gooi ze dan weg.'],
   [/\b(mosterd|ketchup|sojasaus|worcester|tabasco|sambal)\b/,180,'Saus in fles','Deze saus blijft ongeopend nog ± 6 maanden goed na de THT.']];
 const LONG_SUBS={'Dranken':[180,'Dranken','Dranken in fles of blik blijven meestal nog ± 6 maanden goed na de THT.'],'Pasta':[365,'Droge voeding',''],'Rijst':[365,'Droge voeding',''],'Noedels':[365,'Droge voeding',''],'Bloem en meel':[180,'Droge voeding',''],'Suiker en zoetstoffen':[3650,'Bederft bijna niet',''],'Peulvruchten':[365,'Droge voeding',''],'Groenten in blik of bokaal':[365,'Conserven',''],'Fruit in blik of bokaal':[365,'Conserven',''],'Tomatenproducten':[365,'Conserven',''],'Oliën en azijnen':[180,'Olie of azijn',''],'Snoep en chocolade':[180,'Snoep',''],'Koekjes':[90,'Koekjes','Koekjes blijven nog ± 3 maanden goed na de THT, maar worden wel minder krokant.'],'Chips en snacks':[60,'Chips','Chips blijven nog ± 2 maanden goed na de THT, maar worden wel minder krokant.']};
-/* Niet voor verse producten: wat in de koelkast of diepvries hoort, krijgt geen extra marge (behalve drank). */
-function longGuess(p){if(!p)return null;const n=norm([p.name,p.kind||''].join(' '));const fresh=/^(Koeling|Vlees, vis en gevogelte|Groenten en fruit|Brood en bakkerij|Diepvries)$/.test(p.category||'');
-  for(const r of LONG_RULES){if(r[0].test(n)){const drink=r[2]!=='Droge voeding'&&r[2]!=='Conserven'&&r[2]!=='Kruiden'&&r[2]!=='Snoep'&&r[2]!=='Olie'&&r[2]!=='Saus in fles'&&r[2]!=='Koffie of thee'&&r[2]!=='Bederft bijna niet';if(fresh&&!drink)continue;return {days:r[1],label:r[2],note:r[3],ignore:!!r[4]}}}
-  const s=LONG_SUBS[p.sub];if(s&&!fresh)return {days:s[0],label:s[1],note:s[2]||('Reken ± '+longSpan(s[0])+' na de THT.')};return null}
-function longSpan(d){d=Number(d)||0;return d>=3600?'10 jaar of langer':d>=700?Math.round(d/365)+' jaar':d>=360?'1 jaar':d>=170?'6 maanden':d>=85?'3 maanden':d>=55?'2 maanden':d+' dagen'}
+/* Schatting in vijf stappen: (1) diepvries (categorie, subcategorie, naam of locatie), (2) lang houdbare woorden in de naam,
+   (3) verse producten: korte marge of bewust geen marge, (4) subcategorie, (5) categorie. Altijd: kijk, ruik en proef. Een TGT wordt nooit verlengd. */
+const FRESH_RULES=[
+  [/\b(gehakt|kip|kipfilet|kalkoen|vlees|steak|biefstuk|filet|worst|worstjes|ham|salami|paté|pate|vleeswaren|bacon|spek|vis|zalm|kabeljauw|tonijnsteak|garnalen|scampi|mosselen|sushi|kant-en-klaar|bereide|maaltijdsalade|verse soep)\b/,0,'Vlees, vis of bereid gerecht','Geen marge: vlees, vis en bereide gerechten bederven snel. Gebruik ze op tijd of vries ze in vóór de datum. Bij twijfel weggooien.'],
+  [/\b(uht|houdbare melk|lang houdbare)\b/,60,'Houdbare melk','Houdbare (UHT) melk blijft ongeopend nog ± 2 maanden goed na de THT. Na opening in de koelkast en binnen 3 dagen opmaken.'],
+  [/\b(gouda|emmentaler|emmental|parmezaan|parmigiano|grana|comte|comté|cheddar|gruyere|gruyère|maasdam|edammer|edam|oude kaas|belegen|old amsterdam|pecorino|manchego|leerdammer|passendale|brugge)\b/,14,'Harde kaas','Harde kaas blijft ongeopend nog ± 2 weken goed na de THT. Een klein schimmelplekje mag je ruim wegsnijden.'],
+  [/\b(brie|camembert|mozzarella|burrata|ricotta|mascarpone|feta|geitenkaas|roomkaas|philadelphia|cottage|verse kaas|smeerkaas)\b/,3,'Zachte of verse kaas','Zachte en verse kaas: hooguit enkele dagen na de THT. Schimmel of een zure geur: weggooien.'],
+  [/\b(boter|margarine|halvarine|bakboter|minarine)\b/,14,'Boter','Boter en margarine blijven gesloten en koel nog ± 2 weken goed na de THT. Ruikt het ranzig, weggooien.'],
+  [/\b(eieren|eitjes|ei)\b/,7,'Eieren','Eieren kun je nog ± 1 week na de THT gebruiken als je ze goed kookt of doorbakt. Niet meer rauw gebruiken (zoals in tiramisu of mayonaise).'],
+  [/\b(yoghurt|yogurt|kwark|skyr|pudding|platte kaas|room|slagroom|kookroom|creme fraiche|crème fraîche|zure room|melk|karnemelk|chocomelk|drinkyoghurt|dessert)\b/,3,'Zuivel','Gesloten zuivel blijft koel bewaard vaak nog enkele dagen goed na de THT. Kijk, ruik en proef eerst: zuur, bol deksel of vlokken betekent weggooien.'],
+  [/\b(hummus|tapenade|pesto vers|dip|spread|smeersel)\b/,7,'Gekoelde spread','Gesloten gekoelde spreads blijven nog ± 1 week goed na de THT. Kijk en ruik eerst.'],
+  [/\b(brood|pistolet|pistolets|sandwich|baguette|stokbrood|croissant|koffiekoek|wrap|wraps|tortilla|pita|naan)\b/,2,'Brood','Brood blijft na de THT nog een paar dagen eetbaar zolang er geen schimmel op zit. Wat je niet snel opeet, kun je invriezen.']];
+const FROZEN_SUBS={'Vlees en gevogelte':90,'Vis':90,'Brood en deegwaren':90,'Groenten':180,'Fruit':180,'Kant-en-klare maaltijden':90,'Restjes en zelfbereide gerechten':60,'IJs en desserts':90,'Diepvriesgroenten':180,'Diepvriesfruit':180};
+const FROZEN_NOTE='Bij −18 °C blijft het veilig. Na de THT gaat vooral de kwaliteit achteruit: smaak, structuur en vriesbrand. Ontdooid? Niet opnieuw invriezen.';
+const SUB_EST={
+  'Granen en ontbijtproducten':[180,'Ontbijtgranen','Ontbijtgranen en muesli blijven droog en afgesloten nog ± 6 maanden goed na de THT. Ze worden wel minder krokant.'],
+  'Noten en zaden':[90,'Noten en zaden','Noten kunnen door het vet ranzig worden. Reken ± 3 maanden en proef eerst: bitter of ranzig betekent weggooien.'],
+  'Brood en beschuiten':[90,'Beschuit en crackers','Beschuiten, toast en crackers blijven nog ± 3 maanden goed. Ze worden wel minder krokant.'],
+  'Sauzen':[180,'Saus in fles of bokaal','Saus in een gesloten fles of bokaal blijft nog ± 6 maanden goed na de THT.'],
+  'Pesto':[60,'Pesto in bokaal','Pesto in een gesloten bokaal blijft nog ± 2 maanden goed na de THT. Na opening in de koelkast en binnen een week opmaken.'],
+  'Soepen en bouillon':[365,'Soep en bouillon','Bouillonblokjes en soep in blik of zakjes blijven nog ± 1 jaar goed na de THT.'],
+  'Dressings en smaakmakers':[180,'Dressing of smaakmaker','Dressings en smaakmakers blijven gesloten nog ± 6 maanden goed na de THT.'],
+  'Gedroogde kruiden':[365,'Kruiden',''],'Specerijen':[365,'Kruiden',''],'Kruidenmixen':[365,'Kruiden',''],
+  "Kruidenpasta's":[90,'Kruidenpasta','Kruidenpasta in tube of bokaal blijft ongeopend nog ± 3 maanden goed na de THT.'],
+  'Verse kruiden':[0,'Verse kruiden','Geen vaste marge: verse kruiden beoordeel je op zicht en geur. Slap of verkleurd: weg ermee.'],
+  'Bakproducten':[365,'Bakproducten','Bakpoeder, vanillesuiker en pudding- of cakemix blijven droog bewaard nog ± 1 jaar goed. Bakpoeder en gist werken wel minder goed.'],
+  'Zuivel':[3,'Zuivel','Gesloten zuivel blijft koel bewaard vaak nog enkele dagen goed na de THT. Kijk, ruik en proef eerst.'],
+  'Kaas':[7,'Kaas','Harde kaas blijft nog ± 2 weken goed na de THT, zachte kaas hooguit enkele dagen. Kies hieronder wat past.'],
+  'Eieren':[7,'Eieren','Eieren kun je nog ± 1 week na de THT gebruiken als je ze goed kookt of doorbakt. Niet meer rauw gebruiken.'],
+  'Sauzen en spreads':[7,'Gekoelde saus of spread','Gesloten gekoelde sauzen en spreads blijven nog ± 1 week goed na de THT. Kijk en ruik eerst.'],
+  'Vleeswaren':[0,'Vleeswaren','Geen marge: vleeswaren bederven snel. Gebruik ze op tijd of vries ze in vóór de datum.'],
+  'Bereide gerechten':[0,'Bereid gerecht','Geen marge: bereide gerechten gebruik je op tijd of vries je in vóór de datum.'],
+  'Verse groenten':[0,'Verse groenten','Geen vaste marge: beoordeel groenten op zicht, geur en stevigheid.'],'Vers fruit':[0,'Vers fruit','Geen vaste marge: beoordeel fruit op zicht, geur en stevigheid.'],
+  'Douche en bad':[730,'Verzorging','Gesloten douchegel en badschuim blijven nog ± 2 jaar goed. Veranderen geur of kleur, dan weggooien.'],'Haarverzorging':[730,'Verzorging','Gesloten shampoo en conditioner blijven nog ± 2 jaar goed.'],
+  'Mond en tanden':[365,'Tandpasta en mondwater','Tandpasta blijft nog ± 1 jaar bruikbaar, maar het fluoride werkt geleidelijk minder goed.'],'Huid en gezicht':[365,'Crème','Gesloten crème blijft nog ± 1 jaar goed. Verandert de geur of het uitzicht, weggooien.'],
+  'Deodorant':[730,'Deodorant','Gesloten deodorant blijft nog ± 2 jaar goed.'],'Scheren':[730,'Scheren','Scheerschuim en -gel blijven gesloten nog ± 2 jaar goed.'],'Make-up':[365,'Make-up','Gesloten make-up blijft nog ± 1 jaar goed. Na opening geldt het potje-symbool (bv. 12M).'],
+  'Zonnebescherming':[0,'Zonnebescherming','Niet verlengen: na de vervaldatum beschermt zonnecrème minder goed tegen de zon. Koop nieuwe.'],
+  'Toiletpapier':[3650,'Bederft niet','Dit bederft niet.',true],'Tissues':[3650,'Bederft niet','Dit bederft niet.',true],'Watten en wattenstaafjes':[3650,'Bederft niet','Dit bederft niet.',true],'Luiers':[1825,'Luiers','Luiers blijven droog bewaard jaren bruikbaar.',true],
+  'Maandverband en tampons':[365,'Maandverband en tampons','Gesloten verpakkingen blijven nog ± 1 jaar goed. Beschadigde verpakking: niet meer gebruiken.'],'Schoonmaak badkamer':[1095,'Schoonmaakmiddel','Schoonmaakmiddelen blijven gesloten nog jaren goed, ze werken alleen geleidelijk iets minder.'],
+  'Wasmiddel':[730,'Wasmiddel','Wasmiddel blijft nog ± 2 jaar goed. Vloeibaar wasmiddel kan schiften: goed schudden.'],'Wasverzachter':[730,'Wasverzachter','Wasverzachter blijft nog ± 2 jaar goed. Goed schudden.'],'Vlekkenmiddel':[365,'Vlekkenmiddel','Vlekkenmiddel werkt na ± 1 jaar geleidelijk minder goed.'],'Wasparfum en doekjes':[730,'Wasparfum','Blijft nog ± 2 jaar goed; de geur wordt wel zwakker.'],
+  'Vaatwastabletten':[730,'Vaatwastabletten','Vaatwastabletten blijven droog bewaard nog ± 2 jaar goed. Vochtig geworden tabletten lossen slechter op.'],'Glansspoelmiddel':[1095,'Schoonmaakmiddel',''],'Vaatwaszout':[3650,'Bederft niet','Zout bederft niet.',true],'Afwasmiddel':[1095,'Schoonmaakmiddel',''],'Sponzen en borstels':[3650,'Bederft niet','Dit bederft niet.',true],
+  'Allesreiniger':[1095,'Schoonmaakmiddel',''],'Wc-reiniger':[1095,'Schoonmaakmiddel',''],'Ontkalker':[1095,'Schoonmaakmiddel',''],'Glas en ramen':[1095,'Schoonmaakmiddel',''],'Vloer':[1095,'Schoonmaakmiddel',''],'Schoonmaakdoekjes':[365,'Schoonmaakdoekjes','Vochtige doekjes drogen na ± 1 jaar uit. Droge doekjes bederven niet.'],
+  'Keukenrol':[3650,'Bederft niet','Dit bederft niet.',true],'Vuilniszakken':[3650,'Bederft niet','Dit bederft niet.',true],'Aluminium- en huishoudfolie':[3650,'Bederft niet','Dit bederft niet.',true],'Diepvries- en boterhamzakjes':[3650,'Bederft niet','Dit bederft niet.',true],'Bakpapier':[3650,'Bederft niet','Dit bederft niet.',true],
+  'Batterijen':[1095,'Batterijen','Batterijen verliezen langzaam lading, maar zijn na de datum meestal nog jaren bruikbaar.'],'Lampen':[3650,'Bederft niet','Dit bederft niet.',true],'Kaarsen en lucifers':[3650,'Bederft niet','Dit bederft niet.',true],'Insecten en ongedierte':[365,'Insectenmiddel','Werkt na ± 1 jaar geleidelijk minder goed.']};
+const CAT_EST={'Droge voeding':[365,'Droge voeding',''],'Conserven en sauzen':[180,'Conserven en sauzen','Gesloten conserven en sauzen blijven meestal nog ± 6 maanden tot 1 jaar goed na de THT.'],'Kruiden en specerijen':[365,'Kruiden',''],
+  'Koeling':[3,'Gekoeld product','Gesloten gekoelde producten met een THT blijven vaak nog enkele dagen goed. Kijk, ruik en proef eerst.'],'Vlees, vis en gevogelte':[0,'Vlees of vis','Geen marge: vlees en vis bederven snel. Gebruik ze op tijd of vries ze in vóór de datum.'],
+  'Groenten en fruit':[0,'Groenten en fruit','Geen vaste marge: beoordeel op zicht, geur en stevigheid.'],'Brood en bakkerij':[2,'Brood','Brood blijft na de THT nog een paar dagen eetbaar zolang er geen schimmel op zit.'],
+  'Lichaamsverzorging':[365,'Verzorging','Gesloten verzorgingsproducten blijven meestal nog ± 1 jaar goed.'],'Hygiëne en papier':[1825,'Hygiëne en papier','Papier en hygiëneproducten blijven jaren goed.'],
+  'Was':[730,'Wasproduct',''],'Vaat':[730,'Vaatproduct',''],'Schoonmaak':[1095,'Schoonmaakmiddel',''],'Papier, folie en zakken':[3650,'Bederft niet','Dit bederft niet.',true],'Overig huishouden':[1095,'Huishouden','']};
+const LONG_FRESH=/^(Koeling|Vlees, vis en gevogelte|Groenten en fruit|Brood en bakkerij)$/;
+function longMk(days,label,note,ignore,src){days=Number(days)||0;return {days,label,note:note||(days?'Reken ± '+longSpan(days)+' na de THT. Kijk, ruik en proef eerst.':''),ignore:!!ignore,none:!days,src}}
+function longFrozen(p,l){const loc=l&&M.S.locations[l.locationId];return p.category==='Diepvries'||/^Diepvries/.test(p.sub||'')||!!(loc&&loc.type==='diepvries')||/\b(diepvries|diepgevroren|bevroren)\b/.test(norm(p.name||''))}
+function longGuess(p,l){if(!p)return null;const n=norm([p.name,p.kind||''].join(' '));const fresh=LONG_FRESH.test(p.category||'');
+  if(longFrozen(p,l)){const d=FROZEN_SUBS[p.sub]||(/\b(ijs|roomijs)\b/.test(n)?90:/\b(groente|erwten|spinazie|bonen|fruit|bessen|frambozen)\b/.test(n)?180:90);return longMk(d,'Diepvries',FROZEN_NOTE,false,'diepvries')}
+  for(const r of LONG_RULES){if(r[0].test(n)){const drink=r[2]!=='Droge voeding'&&r[2]!=='Conserven'&&r[2]!=='Kruiden'&&r[2]!=='Snoep'&&r[2]!=='Olie'&&r[2]!=='Saus in fles'&&r[2]!=='Koffie of thee'&&r[2]!=='Bederft bijna niet';if(fresh&&!drink)continue;return longMk(r[1],r[2],r[3],r[4],'naam')}}
+  if(!fresh&&/\b(beschuit|beschuiten|toast|crackers|cracotte|knackebrod|rijstwafel|rijstwafels|soepstengels|paneermeel)\b/.test(n))return longMk(90,'Beschuit en crackers',SUB_EST['Brood en beschuiten'][2],false,'naam');
+  if(!fresh&&/\b(muesli|granola|cornflakes|ontbijtgranen|cruesli)\b/.test(n))return longMk(180,'Ontbijtgranen',SUB_EST['Granen en ontbijtproducten'][2],false,'naam');
+  if(!fresh&&/\b(noten|nootjes|amandelen|hazelnoten|walnoten|cashew|pinda|pindas|pistache|zaden|pitten|rozijnen|gedroogd fruit|dadels|vijgen)\b/.test(n))return longMk(90,'Noten en gedroogd fruit',SUB_EST['Noten en zaden'][2],false,'naam');
+  if(!fresh&&/\b(confituur|jam|siroop|stroop|choco|chocopasta|nutella|pindakaas|speculoospasta|hagelslag|honing)\b/.test(n))return longMk(180,'Smeerbaar beleg','Gesloten confituur, chocopasta en pindakaas blijven nog ± 6 maanden goed na de THT.',false,'naam');
+  if(!fresh&&/\b(mayonaise|mayo|saus|dressing|vinaigrette|bearnaise|andalouse|cocktailsaus|curryketchup)\b/.test(n))return longMk(180,'Saus in fles of bokaal',SUB_EST['Sauzen'][2],false,'naam');
+  if(fresh||/^(Zuivel|Kaas|Eieren|Sauzen en spreads)$/.test(p.sub||'')){for(const r of FRESH_RULES){if(r[0].test(n))return longMk(r[1],r[2],r[3],false,'naam')}}
+  const s=LONG_SUBS[p.sub];if(s&&!fresh)return longMk(s[0],s[1],s[2],false,'sub');
+  const e=SUB_EST[p.sub];if(e)return longMk(e[0],e[1],e[2],e[3],'sub');
+  const c=CAT_EST[p.category];if(c)return longMk(c[0],c[1],c[2],c[3],'cat');
+  return null}
+function longSpan(d){d=Number(d)||0;return d>=3600?'10 jaar of langer':d>=700?Math.round(d/365)+' jaar':d>=360?'1 jaar':d>=170?'6 maanden':d>=85?'3 maanden':d>=55?'2 maanden':d>=28?'1 maand':d===1?'1 dag':d%7===0?(d===7?'1 week':d/7+' weken'):d+' dagen'}
 /* Wat in het rode blok staat en eigenlijk lang houdbaar is. */
-function longCandidates(){return M.useFirst().filter(x=>x.e.type==='THT'&&M.productDomain(x.p)!=='medicijnen'&&longGuess(x.p))}
+function longCandidates(){return M.useFirst().filter(x=>{if(x.e.type!=='THT'||M.productDomain(x.p)==='medicijnen')return false;const g=longGuess(x.p,x.l);return !!(g&&!g.none&&g.days>=60)})}
 const LONG_PRESETS=[[90,'+3 mnd'],[180,'+6 mnd'],[365,'+1 jaar'],[730,'+2 jaar'],[1825,'+5 jaar']];
+const SHORT_PRESETS=[[2,'+2 dagen'],[3,'+3 dagen'],[7,'+1 week'],[14,'+2 weken'],[30,'+1 mnd']];
 let LS_CALM=null;
-function calmBody(){const c=LS_CALM;const p=M.S.products[c.pid];const l=c.lot&&M.S.lots[c.lot];const g=longGuess(p);const tht=l&&l.dateType!=='TGT'&&l.expiryDate?l.expiryDate:'';
+function calmBody(){const c=LS_CALM;const p=M.S.products[c.pid];const l=c.lot&&M.S.lots[c.lot];const g=longGuess(p,l);const tht=l&&l.dateType!=='TGT'&&l.expiryDate?l.expiryDate:'';
   let h='<p style="margin-top:0">Kies wat je wilt doen met <b>'+esc(p.name)+'</b>. Het geldt voor alle partijen van dit product, ook voor wat je later koopt.</p>';
   if(l&&l.dateType==='TGT')return h+'<div class="note warn">Dit product heeft een <b>TGT</b> (te gebruiken tot). Dat is een veiligheidsdatum: die kan de app niet verlengen of negeren.</div>';
-  const days=c.days!=null?c.days:(g?g.days:365);
+  const days=c.days!=null?c.days:(g&&g.days?g.days:365);const shortSet=c.short!=null?c.short:!!(g&&(g.none||g.days<60));const PRE=shortSet?(g&&g.none?[[0,'Geen marge']].concat(SHORT_PRESETS):SHORT_PRESETS):LONG_PRESETS;
   h+='<div class="card calm-opt'+(c.choice==='real'?' on':'')+'" data-glean-id="calm-real"><label class="check" style="font-weight:600"><input type="radio" name="calm" data-change="calmPick" data-v="real"'+(c.choice==='real'?' checked':'')+'> 📅 Realistische einddatum gebruiken</label>'+
-    (g?'<div class="small" style="margin:6px 0 0 28px"><b>Schatting voor '+esc(g.label.toLowerCase())+':</b> '+esc(g.note)+'</div>':'<div class="small muted" style="margin:6px 0 0 28px">Geen standaardschatting voor dit product. Kies hieronder zelf een marge.</div>')+
-    '<div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0 0 28px">'+LONG_PRESETS.map(x=>'<button type="button" class="chip'+(Number(days)===x[0]?' on':'')+'" aria-pressed="'+(Number(days)===x[0])+'" data-act="calmDays" data-d="'+x[0]+'">'+x[1]+'</button>').join('')+(g&&!LONG_PRESETS.some(x=>x[0]===g.days)?'<button type="button" class="chip'+(Number(days)===g.days?' on':'')+'" data-act="calmDays" data-d="'+g.days+'">+'+esc(longSpan(g.days))+'</button>':'')+'</div>'+
-    (tht?'<div class="small" style="margin:8px 0 0 28px">THT '+fmtDate(tht)+' → <b>realistisch tot '+fmtDate(addDays(tht,Number(days)))+'</b></div>':'')+'</div>';
+    (g&&g.none?'<div class="note warn" style="margin:6px 0 0 28px" data-glean-id="calm-nomargin"><b>'+esc(g.label)+':</b> '+esc(g.note)+'</div>':g?'<div class="small" style="margin:6px 0 0 28px"><b>Schatting voor '+esc(g.label.toLowerCase())+':</b> '+esc(g.note)+'</div>':'<div class="small" style="margin:6px 0 0 28px" data-glean-id="calm-noguess">'+(p.category?'Voor <b>'+esc(p.sub||p.category)+'</b> heeft de app geen vaste marge. Algemene regel bij een THT: gesloten en goed bewaard is het meestal nog een tijd goed. Kijk, ruik en proef eerst.':'Dit product heeft nog geen categorie, daardoor kan de app niet schatten. <button type="button" class="btn sm" data-act="calmCat" data-id="'+esc(p.id)+'">✎ Categorie kiezen</button>')+'</div>')+
+    '<div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0 0 28px">'+PRE.map(x=>'<button type="button" class="chip'+(Number(days)===x[0]?' on':'')+'" aria-pressed="'+(Number(days)===x[0])+'" data-act="calmDays" data-d="'+x[0]+'">'+x[1]+'</button>').join('')+(g&&g.days&&!PRE.some(x=>x[0]===g.days)?'<button type="button" class="chip'+(Number(days)===g.days?' on':'')+'" data-act="calmDays" data-d="'+g.days+'">+'+esc(longSpan(g.days))+'</button>':'')+'<button type="button" class="chip" data-act="calmSet" data-tip="'+(shortSet?'Toon marges van maanden en jaren':'Toon marges van dagen en weken')+'">'+(shortSet?'Langer…':'Korter…')+'</button></div>'+
+    (tht?'<div class="small" style="margin:8px 0 0 28px">THT '+fmtDate(tht)+' → '+(Number(days)>0?'<b>realistisch tot '+fmtDate(addDays(tht,Number(days)))+'</b>':'<b>geen marge: gebruik vóór de THT</b>')+'</div>':'')+'</div>';
   h+='<div class="card calm-opt'+(c.choice==='ignore'?' on':'')+'" style="margin-top:10px" data-glean-id="calm-ignore"><label class="check" style="font-weight:600"><input type="radio" name="calm" data-change="calmPick" data-v="ignore"'+(c.choice==='ignore'?' checked':'')+'> 🙈 Negeren in "Eerst opgebruiken"</label><div class="small" style="margin:6px 0 0 28px">'+esc(p.name)+' verschijnt niet meer in het rode blok en je krijgt er geen meldingen meer over, ook niet in de ochtendmail. De datum blijft wel zichtbaar in je voorraad.'+(g&&g.ignore?' <b>Aanbevolen voor dit product.</b>':'')+'</div></div>';
   return h}
-A.calmOpen=d=>{const l=M.S.lots[d.id];const pid=l?l.productId:d.pid;const p=M.S.products[pid];if(!p)return;const g=longGuess(p);
-  LS_CALM={pid,lot:l?l.id:'',choice:g&&g.ignore?'ignore':'real',days:Number(p.realDays)>0?Number(p.realDays):g?g.days:365};
+A.calmOpen=d=>{const l=M.S.lots[d.id];const pid=l?l.productId:d.pid;const p=M.S.products[pid];if(!p)return;const g=longGuess(p,l);
+  LS_CALM={pid,lot:l?l.id:'',choice:g&&g.ignore?'ignore':'real',days:Number(p.realDays)>0?Number(p.realDays):g&&g.days?g.days:g&&g.none?0:365,short:Number(p.realDays)>0?Number(p.realDays)<60:null};
   openModal({title:'Niet dringend: '+p.name,gid:'dialog-calm',body:calmBody,foot:()=>'<button type="button" class="btn" data-act="closeModal">Annuleren</button>'+(l&&l.dateType==='TGT'?'':'<button type="button" class="btn primary" data-act="calmSave">'+(LS_CALM.choice==='ignore'?'Negeren':'Datum gebruiken')+'</button>')})};
 A.calmPick=(d,el)=>{if(el.checked){LS_CALM.choice=d.v;paintModal()}};
 A.calmDays=d=>{LS_CALM.days=Number(d.d);LS_CALM.choice='real';paintModal()};
+A.calmSet=()=>{const c=LS_CALM;const p=M.S.products[c.pid];const g=longGuess(p,c.lot&&M.S.lots[c.lot]);const cur=c.short!=null?c.short:!!(g&&(g.none||g.days<60));c.short=!cur;paintModal()};
+A.calmCat=d=>{closeModal();A.editProduct({id:d.id})};
 function longApply(pid,choice,days,src){const p=M.S.products[pid];if(!p)return;
   if(choice==='ignore')M.saveProduct({id:pid,noUrgent:true});
+  else if(!(Number(days)>0))M.saveProduct({id:pid,realDays:0,realSrc:'geen',noUrgent:false});
   else M.saveProduct({id:pid,realDays:Math.max(1,Math.round(Number(days)||0)),realSrc:src||'geschat',noUrgent:false})}
-A.calmSave=()=>{const c=LS_CALM;const p=M.S.products[c.pid];const before={noUrgent:!!p.noUrgent,realDays:Number(p.realDays)||0,realSrc:p.realSrc||''};const g=longGuess(p);
+A.calmSave=()=>{const c=LS_CALM;const p=M.S.products[c.pid];const before={noUrgent:!!p.noUrgent,realDays:Number(p.realDays)||0,realSrc:p.realSrc||''};const g=longGuess(p,c.lot&&M.S.lots[c.lot]);
   longApply(c.pid,c.choice,c.days,g&&Number(c.days)===g.days?'geschat':'zelf');closeModal();
-  toast(c.choice==='ignore'?p.name+' staat niet meer in "Eerst opgebruiken".':p.name+': realistische houdbaarheid THT + '+longSpan(c.days)+'.','',{label:'Ongedaan maken',fn:()=>{M.saveProduct(Object.assign({id:c.pid},before));toast('Hersteld.')}})};
+  toast(c.choice==='ignore'?p.name+' staat niet meer in "Eerst opgebruiken".':(Number(c.days)>0?p.name+': realistische houdbaarheid THT + '+longSpan(c.days)+'.':p.name+': geen marge, de THT blijft gelden.'),'',{label:'Ongedaan maken',fn:()=>{M.saveProduct(Object.assign({id:c.pid},before));toast('Hersteld.')}})};
 /* Alles in één keer: lang houdbare producten uit het rode blok */
 let LS_BULK=null;
 function longBulkBody(){const rows=LS_BULK.rows;if(!rows.length)return '<div class="empty">Niets meer na te kijken.</div>';
   let h='<p style="margin-top:0">Deze producten staan in "Eerst opgebruiken", maar blijven waarschijnlijk veel langer goed. Kies per product, of laat de voorstellen staan.</p><div class="list">';
-  rows.forEach((r,i)=>{const p=M.S.products[r.pid];const g=longGuess(p);const tht=r.tht;
+  rows.forEach((r,i)=>{const p=M.S.products[r.pid];const g=r.g;const tht=r.tht;
     h+='<div class="li" style="align-items:flex-start" data-glean-id="long-row"><div class="grow" style="min-width:0"><div class="main-t">'+esc(p.name)+'</div><div class="sub-t">'+esc(g.label)+(tht?' · THT '+fmtDate(tht)+' → realistisch tot '+fmtDate(addDays(tht,g.days)):'')+'</div><div class="small muted">'+esc(g.note)+'</div></div>'+
       '<select class="inp" style="max-width:190px" aria-label="Keuze voor '+esc(p.name)+'" data-change="longPick" data-i="'+i+'">'+sel(r.choice,[['real','📅 Realistische datum'],['ignore','🙈 Negeren'],['skip','Niets doen']])+'</select></div>'});
   return h+'</div>'}
-A.longBulk=()=>{const seen={};const rows=[];longCandidates().forEach(x=>{if(seen[x.p.id])return;seen[x.p.id]=1;const g=longGuess(x.p);rows.push({pid:x.p.id,tht:x.l.expiryDate,choice:g.ignore?'ignore':'real'})});
+A.longBulk=()=>{const seen={};const rows=[];longCandidates().forEach(x=>{if(seen[x.p.id])return;seen[x.p.id]=1;const g=longGuess(x.p,x.l);rows.push({pid:x.p.id,tht:x.l.expiryDate,g,choice:g.ignore?'ignore':'real'})});
   LS_BULK={rows};openModal({title:'Lang houdbaar? Nakijken',gid:'dialog-long-bulk',wide:true,body:longBulkBody,foot:()=>{const n=LS_BULK.rows.filter(r=>r.choice!=='skip').length;return '<button type="button" class="btn" data-act="closeModal">Annuleren</button><button type="button" class="btn primary" data-act="longBulkSave"'+(n?'':' disabled')+'>Toepassen ('+n+')</button>'}})};
 A.longPick=(d,el)=>{const r=LS_BULK.rows[Number(d.i)];if(r){r.choice=el.value;paintModal()}};
 A.longBulkSave=()=>{const todo=LS_BULK.rows.filter(r=>r.choice!=='skip');const before=todo.map(r=>{const p=M.S.products[r.pid];return {id:r.pid,noUrgent:!!p.noUrgent,realDays:Number(p.realDays)||0,realSrc:p.realSrc||''}});
-  M.tx(()=>todo.forEach(r=>{const g=longGuess(M.S.products[r.pid]);longApply(r.pid,r.choice,g.days,'geschat')}));closeModal();
+  M.tx(()=>todo.forEach(r=>{longApply(r.pid,r.choice,r.g.days,'geschat')}));closeModal();
   const ni=todo.filter(r=>r.choice==='ignore').length,nr=todo.length-ni;
   toast([nr?nr+' met realistische datum':'',ni?ni+' genegeerd':''].filter(Boolean).join(', ')+'.','',{label:'Ongedaan maken',fn:()=>{M.tx(()=>before.forEach(b=>M.saveProduct(b)));toast('Hersteld.')}})};
 /* Bij het product: tonen en terugdraaien */
@@ -3952,7 +4022,54 @@ function welcomeCard(){const d=WELCOME[UI.dom]?UI.dom:'';const w=WELCOME[d];cons
   const locs=n?(n===1?'Je opslagplaats'+where+' staat al klaar.':'Je '+n+' opslagplaatsen'+where+' staan al klaar.'):'Maak eerst een opslagplaats aan bij Opslagplaatsen.';
   return '<div class="card" style="margin-bottom:16px" data-glean-id="dash-welkom"><div class="eyebrow">Welkom</div><h2 style="font-size:24px;font-weight:400;margin:6px 0 8px;text-transform:none;letter-spacing:-.01em;font-family:inherit">Breng '+esc(w[0])+' in kaart</h2><p class="muted" style="margin:0 0 12px">'+esc(w[1]+' '+locs)+'</p><div class="row"><button type="button" class="btn primary lg" data-act="go" data-view="scanner">📷 Eerste product scannen</button></div></div>'}
 const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBanner()+installBanner()+a11yBar();if(!M.products().length)h+=welcomeCard();return h+_dash()};
-function start(){try{Theme.apply();Theme.watch()}catch(e){}try{A11y.apply();ToTop.init()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);setTimeout(()=>{try{MedDB.load().then(()=>MedDB.auto())}catch(e){}},4000);
+/* ---------- Uitleg bij knoppen ----------
+   Met de muis even aanwijzen (of met Tab erheen gaan) toont wat een knop doet. Tekst komt uit data-tip, de lijst hieronder,
+   aria-label of title. Knoppen met alleen een icoon krijgen dezelfde tekst als label voor schermlezers. Uit te zetten bij Toegankelijkheid. */
+const ACT_TIPS={closeModal:'Venster sluiten (Esc)',discardLot:'Weggooien: haalt deze partij uit je voorraad en noteert het in je geschiedenis',
+  useLot:'Een deel gebruiken: je kiest hoeveel er af gaat',useUpLot:'Helemaal opgebruikt: haalt de partij uit je voorraad',useProduct:'Een deel gebruiken, eerst van de oudste partij',
+  topUpLot:'Aanvullen: hoeveelheid bijtellen bij deze partij',addLotFor:'Nieuwe partij van dit product toevoegen',addLotScan:'Nieuwe partij van dit product toevoegen',
+  editLot:'Partij bewerken: datum, hoeveelheid of plaats',moveLot:'Naar een andere opslagplaats verplaatsen',freezeLot:'Naar de diepvries verplaatsen',
+  openLot:'Als geopend markeren: de houdbaarheid na opening begint te lopen',calmOpen:'Niet dringend: een realistische einddatum na de THT kiezen, of negeren',
+  longBulk:'Alle lang houdbare producten uit "Eerst opgebruiken" in één keer nakijken',toShop:'Op je boodschappenlijst zetten',altShop:'Dit gezondere alternatief op je boodschappenlijst zetten',
+  editProduct:'Productgegevens bewerken',deleteProduct:'Product en al zijn partijen verwijderen',product:'Productdetails bekijken',
+  leaflet:'Bijsluiter openen of toevoegen',intake:'Inname noteren; de app controleert de dosis per persoon',intakeDel:'Deze inname verwijderen',miTakeNow:'Noteren dat het nu is ingenomen',
+  scanTo:'Scanner openen en producten meteen op deze plek opslaan',locOrder:d=>Number(d.dir)<0?'Opslagplaats naar boven':'Opslagplaats naar beneden',
+  aisleMove:d=>Number(d.d)<0?'Rayon naar boven':'Rayon naar beneden',domMove:d=>Number(d.step)<0?'Naar boven':'Naar beneden',domOrder:'Volgorde van de delen aanpassen',
+  shopEdit:'Artikel bewerken',shopDel:'Van de lijst verwijderen',shopCheckGroup:'Alles in dit rayon afvinken',shopTransfer:'Afgevinkte artikelen als gekocht in je voorraad zetten',
+  shopShare:'Je lijst delen met iemand anders',shopCopy:'Je lijst kopiëren om ergens te plakken',shopPrint:'Je lijst afdrukken',
+  camTorch:'Zaklamp van de camera aan of uit',cropRotate:'Foto een kwartslag draaien',notifRead:'Als gelezen markeren',
+  wkNav:d=>Number(d.d)<0?'Vorige week':Number(d.d)>0?'Volgende week':'Terug naar deze week',stepBy:d=>Number(d.d)<0?'Eén minder':'Eén meer',bulkStep:d=>Number(d.dir)<0?'Eén minder':'Eén meer',
+  bulkDel:'Uit deze scansessie verwijderen',rfDelIng:'Ingrediënt verwijderen',wkDel:'Gerecht uit het weekmenu halen',delRecipe:'Recept verwijderen',hideRecipe:'Recept verbergen; je kunt het later terugzetten',
+  pickIcon:d=>d.i?'Dit icoon kiezen':'Terug naar het icoon volgens de categorie',pickBrand:d=>'Merk "'+(d.b||'')+'" invullen',brandAll:'Alle merken tonen die je al gebruikt',
+  symRedo:'Nog eens laten nakijken door AI (kost een aanvraag)',syncNow:'Nu synchroniseren met je Google Sheet',exportInv:'Je voorraad downloaden als Excel-bestand',
+  speakExpiry:'Vervaldatums hardop laten voorlezen',cfSpeak:'Gegevens hardop laten voorlezen',moreNav:'Meer onderdelen tonen',
+  healthRefresh:'Gezondheidsgegevens opnieuw ophalen uit Open Food Facts',nutEdit:'Voedingswaarden van het etiket invoeren of aanpassen',cfExpFreeze:'Datum voorstellen voor de diepvries',
+  useEditUndo:'Deze afboeking ongedaan maken',srPick:'Dit product toevoegen zoals bij een gescande barcode'};
+function tipVis(el){let s='';el.childNodes.forEach(n=>{if(n.nodeType===3)s+=n.nodeValue;else if(n.nodeType===1&&n.getAttribute('aria-hidden')!=='true'&&!(n.classList&&n.classList.contains('ico')))s+=' '+tipVis(n)});return s.replace(/\s+/g,' ').trim()}
+function tipAct(el){const d=el.dataset||{};const f=d.act&&ACT_TIPS[d.act];try{return f?(typeof f==='function'?f(d,el):f):''}catch(e){return ''}}
+const Tip={el:null,t:0,cur:null,q:0,f:1,
+  on(){try{return A11y.get().tips!==false}catch(e){return true}},
+  init(){if(Tip.el||!document.body)return;const d=document.createElement('div');d.className='tip';d.id='tip';d.setAttribute('role','tooltip');d.setAttribute('aria-hidden','true');document.body.appendChild(d);Tip.el=d;
+    document.addEventListener('pointerover',e=>{if(e.pointerType&&e.pointerType!=='mouse')return;const el=Tip.target(e.target);if(el===Tip.cur)return;Tip.hide();if(el&&Tip.on()){Tip.cur=el;Tip.t=setTimeout(()=>Tip.show(el),450)}},true);
+    document.addEventListener('pointerout',e=>{const el=Tip.cur;if(el&&!(e.relatedTarget&&el.contains(e.relatedTarget)))Tip.hide()},true);
+    document.addEventListener('focusin',e=>{const el=Tip.target(e.target);if(!el||!Tip.on())return;let fv=false;try{fv=el.matches(':focus-visible')}catch(x){}if(fv){Tip.cur=el;Tip.show(el)}});
+    document.addEventListener('focusout',()=>Tip.hide());
+    ['pointerdown','scroll','wheel'].forEach(ev=>document.addEventListener(ev,()=>Tip.hide(),{capture:true,passive:true}));
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')Tip.hide()},true);
+    try{new MutationObserver(()=>{if(Tip.cur&&!document.contains(Tip.cur))Tip.hide();Tip.queue()}).observe(document.body,{childList:true,subtree:true})}catch(e){}
+    Tip.label()},
+  target(n){const el=n&&n.closest&&n.closest('button,a[href],[role="button"],label.btn,summary,[data-tip]');return el&&el!==Tip.el&&Tip.text(el)?el:null},
+  text(el){const d=el.dataset||{};let t=d.tip||tipAct(el)||el.getAttribute('aria-label')||el.getAttribute('title')||d.tipTitle||'';t=String(t).trim();if(!t)return '';
+    const v=norm(tipVis(el));return v&&norm(t)===v?'':t},
+  show(el){const t=Tip.text(el);const d=Tip.el;if(!t||!d||!document.contains(el))return;d.textContent=t;d.style.left='100px';d.style.top='0px';d.classList.add('on');
+    const r0=d.getBoundingClientRect();const f=r0.left>0?r0.left/100:1;const r=el.getBoundingClientRect();const vw=window.innerWidth,vh=window.innerHeight;
+    let x=r.left+r.width/2-r0.width/2;x=Math.max(8,Math.min(vw-r0.width-8,x));let y=r.bottom+8;if(y+r0.height>vh-8)y=Math.max(8,r.top-r0.height-8);
+    d.style.left=(x/f)+'px';d.style.top=(y/f)+'px'},
+  hide(){clearTimeout(Tip.t);Tip.cur=null;if(Tip.el)Tip.el.classList.remove('on')},
+  queue(){if(Tip.q)return;Tip.q=requestAnimationFrame(()=>{Tip.q=0;Tip.label()})},
+  label(){try{document.querySelectorAll('button[title],a[title],label.btn[title],summary[title]').forEach(b=>{const t=b.getAttribute('title');if(!b.getAttribute('aria-label')&&!tipVis(b))b.setAttribute('aria-label',t);b.dataset.tipTitle=t;b.removeAttribute('title')});
+    document.querySelectorAll('button[data-act]:not([aria-label])').forEach(b=>{const v=tipVis(b).replace(/[\s\uFE0F\u200D]/g,'');if(Array.from(v).length>2)return;const t=tipAct(b);if(t)b.setAttribute('aria-label',t)})}catch(e){}}};
+function start(){try{Theme.apply();Theme.watch()}catch(e){}try{A11y.apply();ToTop.init()}catch(e){}try{Tip.init()}catch(e){}try{Install.init()}catch(e){}try{checkIconFont();window.addEventListener('load',checkIconFont);const top=document.querySelector('.top');const onS=()=>{if(top&&top.classList)top.classList.toggle('scrolled',(window.scrollY||0)>4)};window.addEventListener('scroll',onS,{passive:true})}catch(e){}try{const v=document.getElementById('app-ver');if(v)v.textContent='Versie '+APP_VERSION}catch(e){}M.listeners.add(scheduleRender);applyUser();buildNav();window.addEventListener('hashchange',applyRoute);applyRoute();Reminders.start();Sync.start();setTimeout(()=>{try{autoHealth()}catch(e){}},6000);setTimeout(()=>{try{MedDB.load().then(()=>MedDB.auto())}catch(e){}},4000);
   window.addEventListener('beforeunload',()=>{if(Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&Store.adapter&&Store.adapter.flushNow)Store.adapter.flushNow()})}
 const hooks={onAutoShopping:(p,reason)=>{setTimeout(()=>toast(p.name+(reason==='op'?' is op':' is bijna op')+' — automatisch op je boodschappenlijst gezet.'),50)}};
 async function boot(){const collab=window.GleanBridge&&window.GleanBridge.collaboration;
@@ -4034,7 +4151,7 @@ A.installApp=async()=>{const e=Install.evt;if(!e){go('instellingen',{tab:'algeme
 A.installLater=()=>{LS.set('installDismissed',true);toast('Je kunt Provisio later installeren via Instellingen › Algemeen.');render()};
 
 /* ---------- Toegankelijkheid (slechtzienden) ---------- */
-const A11y={def:{size:'m',contrast:false,big:false,motion:false,speak:false,speakToasts:false,rate:1},
+const A11y={def:{size:'m',contrast:false,big:false,motion:false,tips:true,speak:false,speakToasts:false,rate:1},
   SIZES:[['m','Normaal','100%'],['l','Groot','115%'],['xl','Extra groot','130%'],['xxl','Maximaal','150%']],
   RATES:[[0.8,'Traag'],[1,'Normaal'],[1.25,'Snel']],
   get(){const o=LS.get('a11y',{});return Object.assign({},A11y.def,o&&typeof o==='object'?o:{})},
@@ -4068,7 +4185,7 @@ function a11ySection(){const o=A11y.get();const can=A11y.canSpeak();const v=can?
   const tg=(k,lbl,hint)=>'<label class="check a11y-opt"><input type="checkbox" data-change="a11ySet" data-k="'+k+'" '+(o[k]?'checked':'')+'><span><b>'+lbl+'</b><br><span class="small muted">'+hint+'</span></span></label>';
   return '<div class="section" data-glean-id="settings-a11y"><h3>Toegankelijkheid</h3>'+
   '<div class="lbl" style="margin-bottom:6px">Tekstgrootte</div><div class="seg" role="group" aria-label="Tekstgrootte">'+A11y.SIZES.map(s=>'<button type="button" data-act="a11ySize" data-s="'+s[0]+'" aria-pressed="'+(o.size===s[0])+'">'+s[1]+' <span class="small">'+s[2]+'</span></button>').join('')+'</div>'+
-  '<div class="stack" style="margin-top:12px;gap:10px">'+tg('contrast','Hoog contrast','Donkerdere tekst, duidelijke randen rond knoppen en velden.')+tg('big','Grote knoppen','Knoppen en invoervelden worden groter en makkelijker aan te tikken.')+tg('motion','Minder beweging','Geen animaties of overgangen.')+
+  '<div class="stack" style="margin-top:12px;gap:10px">'+tg('contrast','Hoog contrast','Donkerdere tekst, duidelijke randen rond knoppen en velden.')+tg('big','Grote knoppen','Knoppen en invoervelden worden groter en makkelijker aan te tikken.')+tg('motion','Minder beweging','Geen animaties of overgangen.')+tg('tips','Uitleg bij knoppen','Toont kort wat een knop doet als je er met de muis op wijst of er met Tab naartoe gaat.')+
   (can?tg('speak','Voorlezen','Leest scanresultaten voor (product, opslagplaats, vervaldatum) en toont een knop om je vervaldatums te laten voorlezen.')+tg('speakToasts','Meldingen voorlezen','Leest ook korte meldingen onderaan het scherm voor.'):'<div class="note warn">Voorlezen wordt niet ondersteund in deze browser.</div>')+'</div>'+
   (can?'<div class="lbl" style="margin:12px 0 6px">Spreeksnelheid</div><div class="row"><div class="seg" role="group" aria-label="Spreeksnelheid">'+A11y.RATES.map(r=>'<button type="button" data-act="a11yRate" data-r="'+r[0]+'" aria-pressed="'+(Number(o.rate)===r[0])+'">'+r[1]+'</button>').join('')+'</div><button type="button" class="btn" data-act="a11yTest">'+ico('record_voice_over','🔊')+'Test</button></div><div class="hint" style="margin-top:6px">'+(v?'Stem: '+esc(v.name)+' ('+esc(v.lang)+').':'Geen Nederlandse stem gevonden op dit toestel — de standaardstem wordt gebruikt. Je kunt een Nederlandse stem toevoegen in de instellingen van je toestel (Spraak / Tekst-naar-spraak).')+'</div>':'')+
   '<div class="hint" style="margin-top:10px">Werkt ook samen met de schermlezer van je toestel (VoiceOver of TalkBack). De keuzes gelden per toestel.</div></div>'}
