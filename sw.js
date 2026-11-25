@@ -1,8 +1,9 @@
 /* Provisio service worker — maakt de app installeerbaar en offline bruikbaar.
    - App-pagina: eerst netwerk (zo krijg je updates meteen), offline uit de cache.
    - Lettertypen en bibliotheken (Google Fonts, jsDelivr): uit de cache, anders netwerk.
-   - Synchronisatie (Google) en productopzoekingen (Open Food Facts) gaan altijd rechtstreeks. */
-const VERSION = 'provisio-v12';
+   - Synchronisatie (Google) en productopzoekingen (Open Food Facts) gaan altijd rechtstreeks.
+   - De geneesmiddelenlijst (data/*.json) gaat altijd via het netwerk: de app bewaart zelf een kopie op het toestel. */
+const VERSION = 'provisio-v15';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const CDN = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdn\.jsdelivr\.net|tfhub\.dev|www\.kaggle\.com|storage\.googleapis\.com)\//;
 
@@ -17,6 +18,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
+    if (url.pathname.includes('/data/') && url.pathname.endsWith('.json')) return;
     if (req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('.html')) {
       e.respondWith(fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); } return res; })
         .catch(() => caches.match('./index.html').then(r => r || caches.match('./'))));
