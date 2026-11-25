@@ -1164,6 +1164,8 @@ function createModel(adapter,hooks){hooks=hooks||{};
       cands.sort((a,b)=>fifoCmp(a.l,b.l));let remaining=need;const allocs=[];let unknown=false;const urgent=[];let opened=false;
       const markUrg=c=>{const e=lotExpiry(c.l,ref);if(URG[e.level]&&!e.calm&&!urgent.some(u=>u.lotId===c.l.id))urgent.push({lotId:c.l.id,name:c.p.name,days:e.days,level:e.level,type:e.type});if(c.l.opened)opened=true};
       for(const c of cands){if(remaining<=0.0005)break;let f=convert(1,c.l.unit,ing.u,c.p);
+        /* Kruidenpotje in stuks zonder gekende inhoud: een snufje telt als in huis, maar het potje wordt niet afgeboekt. */
+        if(f==null&&ing.u!=='stuks'&&(c.l.unit==='stuks'||c.l.unit==='verpakkingen')&&typeof isHerbLot==='function'&&isHerbLot(c.l,c.p)){allocs.push({lotId:c.l.id,productId:c.p.id,qty:0,unit:c.l.unit,ingQty:remaining,jar:true});markUrg(c);remaining=0;break}
         if(f==null){if(ing.u==='stuks'||c.l.unit==='stuks'||c.l.unit==='verpakkingen'){ /* onbekende omrekening: neem 1 stuk/verpakking als volledig */ unknown=true;allocs.push({lotId:c.l.id,productId:c.p.id,qty:Math.min(c.avail,1),unit:c.l.unit,ingQty:remaining,approx:true});markUrg(c);remaining=0;break}unknown=true;continue}
         const takeU=Math.min(c.avail*f,remaining);allocs.push({lotId:c.l.id,productId:c.p.id,qty:rnd(takeU/f),unit:c.l.unit,ingQty:rnd(takeU)});remaining=rnd(remaining-takeU);markUrg(c);if(productTotal(c.p.id,ing.u)>=need*3)big++}
       let status;if(remaining<=0.0005)status=unknown?'approx':'ok';else if(allocs.length)status='partial';else status=ing.basis?'basis':(ing.opt?'optional':'missing');
@@ -2694,6 +2696,7 @@ function recipeBody(){const r=M.recipeById(RS.id);const ev=M.evalRecipe(r,{servi
   ev.ings.forEach((i,ix)=>{const st=i.status;const icon=st==='ok'?'<span class="st-ok">✓</span>':st==='approx'?'<span class="st-ok">≈</span>':st==='partial'?'<span class="st-part">◐</span>':st==='basis'?'<span class="st-opt">·</span>':st==='optional'?'<span class="st-opt">○</span>':'<span class="st-miss">✕</span>';
     h+='<div class="ing" data-ing="'+ix+'">'+icon+'<div style="min-width:0"><div><b>'+esc(i.ing.n)+'</b> <span class="muted">'+esc(fmtQty(i.need,i.unit))+'</span>'+(i.ing.opt?' <span class="tag">optioneel</span>':'')+(i.ing.basis?' <span class="tag">basisvoorraad</span>':'')+'</div>';
     if(i.allocs.length){i.allocs.forEach((a,ai)=>{h+='<div class="row nowrap small" style="margin-top:5px" data-alloc><select class="inp" style="min-height:32px;padding:4px 8px" data-lot>'+sel(a.lotId,i.cands.map(c=>{const l=M.S.lots[c.lotId],p=M.S.products[c.productId],e=M.lotExpiry(l);return [c.lotId,p.name+' · '+fmtQty(l.qty,l.unit)+' · '+M.locName(l.locationId)+' · '+(e.date?TYPE_SHORT[e.type]+' '+fmtDate(e.date):'geen datum')]}))+'</select><input class="inp" style="width:96px;min-height:32px;padding:4px 8px" type="number" step="any" min="0" value="'+a.qty+'" data-q aria-label="Hoeveelheid"><span class="muted">'+esc(a.unit)+'</span></div>'});
+      if(i.allocs.some(a=>a.jar))h+='<div class="small muted">🫙 Uit het potje: niet afgeboekt. Is het potje leeg? Zet de hoeveelheid op 1.</div>';
       if(i.short>0)h+='<div class="small st-part">Nog '+esc(fmtQty(i.short,i.unit))+' tekort</div>';if(i.status==='approx')h+='<div class="small muted">Eenheid kon niet exact omgerekend worden — controleer de hoeveelheid.</div>'}
     else if(st==='missing')h+='<div class="small st-miss">Niet in huis</div>';else if(st==='basis')h+='<div class="small muted">Meestal in huis (kruiden/basis) — niet afgeboekt</div>';else if(st==='optional')h+='<div class="small muted">Optioneel, niet in huis</div>';
     h+='</div><div class="small muted" style="text-align:right">'+(i.urgent.length?'<span class="tag lv-'+i.urgent[0].level+'">'+(i.urgent[0].days<0?'vervallen':i.urgent[0].days+' d')+'</span>':'')+(i.opened?' <span class="tag">geopend</span>':'')+'</div></div>'});
@@ -2803,17 +2806,30 @@ A.saveRecipe=()=>{rfRead();RF.ing=RF.ing.filter(i=>i.n);RF.ing.forEach(i=>{if(!(
    De API-sleutel staat in de Scripteigenschappen van je Apps Script, nooit in de app.
    De app stuurt alleen: productnaam, categorie, hoeveelheid, dagen tot vervaldatum, diepvries/geopend,
    aantal porties, leeftijden van kinderen (geen namen) en je wensen. */
-const AIR={meal:'avond',count:2,servings:null,wish:'',urgent:true,maxMissing:2,busy:false,err:'',errCode:'',results:[],exclude:[],saved:{},meta:null,modal:null};
+const AIR={meal:'avond',count:2,servings:null,wish:'',urgent:true,herbs:true,focus:[],note:'',maxMissing:2,busy:false,err:'',errCode:'',results:[],exclude:[],saved:{},meta:null,modal:null};
 /* Welke producten passen bij welke maaltijd: broodbeleg niet bij avondmaal of dessert, snacks/snoep/koekjes alleen bij dessert. */
 function aiRoleSkip(role,meal){return role==='beleg'?(meal==='avond'||meal==='dessert'):role==='snack'?meal!=='dessert':false}
 function aiSkipped(meal){meal=meal||AIR.meal;const seen={};M.lots().forEach(l=>{if(!M.suitable(l))return;const p=M.S.products[l.productId];if(p&&p.name&&!M.isMed(p)&&aiRoleSkip(foodRole(p),meal))seen[p.id]=p.name});return Object.values(seen).sort((a,b)=>a.localeCompare(b))}
-function aiStock(meal){meal=meal||AIR.meal;const by={};M.lots().forEach(l=>{if(!M.suitable(l))return;const p=M.S.products[l.productId];if(!p||!p.name)return;const role=foodRole(p);if(aiRoleSkip(role,meal))return;const e=M.lotExpiry(l);const key=p.id+'|'+(l.unit||'stuks');
+/* Kruiden en specerijen: alles in het Kruidenrek of de Kruidenkast, of met de categorie Kruiden en specerijen.
+   Ze gaan als apart "kruidenrek" naar Gemini: altijd volledig, los van de grens van 150 voorraadregels. */
+const HERB_LOCS=['loc-kruidenrek','loc-kruidenkast'];
+function isHerbLoc(id){const l=M.S.locations[id];return HERB_LOCS.includes(id)||!!(l&&/kruiden/i.test(l.name||''))}
+function isHerbLot(l,p){return !!p&&!M.isMed(p)&&(p.category==='Kruiden en specerijen'||isHerbLoc(l.locationId))}
+function aiHerbs(){const by={};M.lots().forEach(l=>{if(!M.suitable(l))return;const p=M.S.products[l.productId];if(!p||!p.name||!isHerbLot(l,p))return;const e=M.lotExpiry(l);const key=p.id+'|'+(l.unit||'stuks');
+    const x=by[key]||(by[key]={name:p.name,kind:p.sub&&p.sub!==p.name?p.sub:(p.kind||''),qty:0,unit:l.unit||'stuks',days:null,opened:false});x.qty+=Number(l.qty)||0;
+    if(e.days!=null&&(x.days==null||e.days<x.days))x.days=e.days;if(l.opened)x.opened=true});
+  return Object.values(by).map(x=>Object.assign(x,{qty:Math.round(x.qty*100)/100})).sort((a,b)=>(a.days==null?99999:a.days)-(b.days==null?99999:b.days)||a.name.localeCompare(b.name,'nl')).slice(0,150)}
+function aiHerbNames(){const seen={};return aiHerbs().filter(x=>!seen[x.name]&&(seen[x.name]=1))}
+/* Alleen zout, peper, olie en water gelden nog als "meestal in huis". Een ander kruid dat je niet hebt, wordt optioneel. */
+const BASIS_CORE_RE=/\b(zee|tafel|keuken|grof |fijn )?zout\b|\bpeper\b|olie\b|\bwater\b/;
+function aiStock(meal){meal=meal||AIR.meal;const by={};M.lots().forEach(l=>{if(!M.suitable(l))return;const p=M.S.products[l.productId];if(!p||!p.name||isHerbLot(l,p))return;const role=foodRole(p);if(aiRoleSkip(role,meal))return;const e=M.lotExpiry(l);const key=p.id+'|'+(l.unit||'stuks');
     const x=by[key]||(by[key]={name:p.name,category:role==='beleg'?'Broodbeleg (koud, voor op brood)':(p.sub||p.category||''),qty:0,unit:l.unit||'stuks',days:null,freezer:false,opened:false});x.qty+=Number(l.qty)||0;
     if(e.days!=null&&(x.days==null||e.days<x.days))x.days=e.days;if(M.isFreezer(l.locationId))x.freezer=true;if(l.opened)x.opened=true});
   return Object.values(by).map(x=>Object.assign(x,{qty:Math.round(x.qty*100)/100})).sort((a,b)=>(a.days==null?99999:a.days)-(b.days==null?99999:b.days)||a.name.localeCompare(b.name)).slice(0,150)}
 function aiToRecipe(x,ix){const uniq=a=>a.filter((v,i)=>v&&a.indexOf(v)===i);
   const ing=(x.ing||[]).map(i=>{const n=String(i.n||'').trim().slice(0,60);const words=n.toLowerCase().split(/\s+/).filter(Boolean);const head=words.length>1&&words[words.length-1].length>=3?words[words.length-1]:'';
-    const k=uniq([i.from?String(i.from).toLowerCase():'',n.toLowerCase(),head]);const q=Number(i.q);return {n,q:q>0?q:1,u:UNITS.some(u=>u.id===i.u)?i.u:'stuks',k,opt:!!i.opt,basis:!!i.basis,from:i.from?String(i.from).slice(0,70):undefined}}).filter(i=>i.n);
+    const k=uniq([i.from?String(i.from).toLowerCase():'',n.toLowerCase(),head]);const q=Number(i.q);let basis=!!i.basis,opt=!!i.opt;if(basis&&!i.from&&!BASIS_CORE_RE.test(norm(n))){basis=false;opt=true}
+    return {n,q:q>0?q:1,u:UNITS.some(u=>u.id===i.u)?i.u:'stuks',k,opt,basis,from:i.from?String(i.from).slice(0,70):undefined}}).filter(i=>i.n);
   const time=Math.max(5,Math.min(480,Math.round(Number(x.time)||30)));const tags=[];if(x.budget)tags.push('budget');if(x.kind)tags.push('kind');if(time<=25)tags.push('snel');
   return {id:'ai-tmp-'+ix,name:String(x.name||'Recept').slice(0,80),emoji:String(x.emoji||'🍽️'),time,diff:['Makkelijk','Gemiddeld','Moeilijk'].includes(x.diff)?x.diff:'Makkelijk',
     servings:Number(x.servings)||M.effServings()||2,meals:x.reqMeal==='dessert'?['dessert']:(x.meals||[]).filter(m=>dishTypes().includes(m)).length?x.meals.filter(m=>dishTypes().includes(m)):[x.reqMeal&&dishTypes().includes(x.reqMeal)?x.reqMeal:'avond'],tags,ing,
@@ -2824,17 +2840,25 @@ function aiBanner(){const n=AIR.results.length;return '<div class="card" data-gl
   (aiPaired()?'':'<div class="hint" style="margin-top:6px">De AI-functie loopt via je eigen Google Apps Script, zodat je API-sleutel geheim blijft. Koppel eerst Google-synchronisatie.</div>')+'</div>'}
 A.aiOpen=()=>{if(!aiPaired()){go('instellingen',{tab:'sync'});return}AIR.servings=null;AIR.modal=openModal({title:'✨ Nieuwe gerechten bedenken',gid:'dialog-ai-recipe',wide:true,body:aiBody,foot:aiFoot})};
 function aiReadForm(){const m=$('#ai-meal');if(!m)return;if(dishTypes().includes(m.value))AIR.meal=m.value;const c=Number(($('#ai-count')||{}).value);if(c>=1&&c<=3)AIR.count=c;
-  const w=$('#ai-wish');if(w)AIR.wish=String(w.value||'').trim().slice(0,300);const u=$('#ai-urgent');if(u)AIR.urgent=!!u.checked;const x=($('#ai-miss')||{}).value;if(x!==''&&x!=null&&Number(x)>=0&&Number(x)<=3)AIR.maxMissing=Number(x);const sv=Number(($('#ai-serv')||{}).value);if(sv>=1&&sv<=20)AIR.servings=sv}
+  const w=$('#ai-wish');if(w)AIR.wish=String(w.value||'').trim().slice(0,300);const u=$('#ai-urgent');if(u)AIR.urgent=!!u.checked;const hb=$('#ai-herbs');if(hb)AIR.herbs=!!hb.checked;const x=($('#ai-miss')||{}).value;if(x!==''&&x!=null&&Number(x)>=0&&Number(x)<=3)AIR.maxMissing=Number(x);const sv=Number(($('#ai-serv')||{}).value);if(sv>=1&&sv<=20)AIR.servings=sv}
 function aiServings(){const v=Number(AIR.servings);return v>=1&&v<=20?v:M.effServings()}
 function aiServOpts(){const hh=M.effServings();const cur=aiServings();const vals=[1,2,3,4,5,6,7,8,9,10,12];[hh,cur].forEach(v=>{if(!vals.includes(v))vals.push(v)});vals.sort((a,b)=>a-b);return vals.map(v=>[String(v),String(v).replace('.',',')+(v===hh?' (gezin)':'')])}
-function aiBody(){const consent=!!M.state().aiConsent;const st=aiStock();const skipped=aiSkipped();const urg=st.filter(x=>x.days!=null&&x.days<=3).length;
+function aiBody(){const consent=!!M.state().aiConsent;const st=aiStock();const hr=aiHerbs();const hn=aiHerbNames();const skipped=aiSkipped();const urg=st.concat(hr).filter(x=>x.days!=null&&x.days<=3).length;
+  AIR.focus=AIR.focus.filter(n=>hn.some(x=>x.name===n));
   let h='<div class="grid4"><div class="field"><label for="ai-meal">Maaltijd</label><select id="ai-meal" class="inp" data-change="aiMeal">'+sel(AIR.meal,dishTypes().map(m=>[m,MEAL_LABEL[m]]))+'</select></div><div class="field"><label for="ai-count">Aantal ideeën</label><select id="ai-count" class="inp">'+sel(String(AIR.count),[['1','1'],['2','2'],['3','3']])+'</select></div><div class="field"><label for="ai-miss">Max. ontbrekend</label><select id="ai-miss" class="inp">'+sel(String(AIR.maxMissing),[['0','Niets kopen'],['1','1 ingrediënt'],['2','2 ingrediënten'],['3','3 ingrediënten']])+'</select></div><div class="field"><label for="ai-serv">Porties</label><select id="ai-serv" class="inp" title="'+esc(householdLine())+'">'+sel(String(aiServings()),aiServOpts())+'</select></div></div>'+
     '<div class="field"><label for="ai-wish">Wensen (optioneel)</label><input id="ai-wish" class="inp" maxlength="300" placeholder="bv. vegetarisch, in 20 minuten, iets met de oven, zonder noten" value="'+esc(AIR.wish)+'"></div>'+
     '<label class="check"><input type="checkbox" id="ai-urgent" '+(AIR.urgent?'checked':'')+'> Voorrang aan producten die bijna vervallen'+(urg?' ('+urg+')':'')+'</label>';
-  h+='<div class="hint" data-glean-id="ai-privacy">Gemini krijgt via je Google Apps Script: '+st.length+' voorraadregels (productnaam, categorie, hoeveelheid, dagen tot vervaldatum, diepvries/geopend), het aantal porties, de leeftijden van kinderen (geen namen) en je wensen. Bij de gratis variant van Gemini mag Google die gegevens gebruiken om zijn diensten te verbeteren.</div>'+
+  if(hn.length){h+='<label class="check"><input type="checkbox" id="ai-herbs" data-change="aiMeal" '+(AIR.herbs?'checked':'')+'> 🌿 Gebruik actief mijn kruiden en specerijen ('+hn.length+')</label>';
+    if(AIR.herbs)h+='<details data-glean-id="ai-herb-focus" style="margin:2px 0 8px"'+(AIR.focus.length?' open':'')+'><summary class="small" style="cursor:pointer">Kruid in de kijker (optioneel, tot 3)'+(AIR.focus.length?': <b>'+esc(AIR.focus.join(', '))+'</b>':'')+'</summary>'+
+      '<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">'+hn.map(x=>'<button type="button" class="chip" aria-pressed="'+AIR.focus.includes(x.name)+'" data-act="aiHerbFocus" data-n="'+esc(x.name)+'">'+esc(x.name)+(x.days!=null&&x.days<=7?' ⏳':'')+'</button>').join('')+'</div>'+
+      '<div class="small muted" style="margin-top:4px">Gemini verwerkt deze kruiden zeker. ⏳ = bijna vervallen of geopend.</div></details>';
+    else h+='<div class="small muted" style="margin:-2px 0 8px">Je kruiden gaan wel mee, maar Gemini kiest zelf of hij ze gebruikt.</div>'}
+  else h+='<div class="small muted" style="margin:2px 0 8px">🌿 Geen kruiden gevonden in het Kruidenrek of de Kruidenkast.</div>';
+  h+='<div class="hint" data-glean-id="ai-privacy">Gemini krijgt via je Google Apps Script: '+st.length+' voorraadregels (productnaam, categorie, hoeveelheid, dagen tot vervaldatum, diepvries/geopend), '+(hr.length?hn.length+' kruiden en specerijen (naam, soort, hoeveelheid, dagen tot vervaldatum), ':'')+'het aantal porties, de leeftijden van kinderen (geen namen) en je wensen. Bij de gratis variant van Gemini mag Google die gegevens gebruiken om zijn diensten te verbeteren.</div>'+
     (skipped.length?'<div class="hint" data-glean-id="ai-skipped">🥪 Niet meegestuurd voor '+esc(String(MEAL_LABEL[AIR.meal]||AIR.meal).toLowerCase())+': '+esc(skipped.slice(0,8).join(', '))+(skipped.length>8?' en '+(skipped.length-8)+' andere':'')+' ('+(AIR.meal==='avond'?'broodbeleg, snacks en snoep':AIR.meal==='dessert'?'broodbeleg':'snacks en snoep')+'). Pas dit per product aan via Product bewerken › Gebruik in recepten.</div>':'');
   if(!consent)h+='<label class="check"><input type="checkbox" id="ai-consent"> Ik ga akkoord dat deze gegevens naar Google Gemini gaan</label>';
   if(AIR.busy)h+='<div class="note" role="status" data-glean-id="ai-busy">⏳ Gemini denkt na… <b id="ai-elapsed">'+aiElapsedTxt()+'</b><div class="small" id="ai-wait-hint">'+aiWaitHint()+'</div></div>';
+  if(AIR.note&&!AIR.err)h+='<div class="note warn" role="status" data-glean-id="ai-note">'+esc(AIR.note)+'</div>';
   if(AIR.err)h+='<div class="note warn" role="alert" data-glean-id="ai-error">'+esc(AIR.err)+(AIR.errCode==='old'||AIR.errCode==='nokey'||AIR.errCode==='scope'?'<div class="small" style="margin-top:6px">Zie de installatiegids, onderdeel "AI-recepten met Google Gemini".</div>':'')+'</div>';
   if(AIR.results.length){h+='<div class="eyebrow" style="margin-top:6px">Ideeën van Gemini'+(AIR.meta&&AIR.meta.max?' · '+AIR.meta.used+'/'+AIR.meta.max+' aanvragen vandaag':'')+'</div>';AIR.results.forEach((r,ix)=>{h+=aiCard(r,ix)})}
   return h}
@@ -2856,16 +2880,19 @@ function aiElapsedTxt(){const s=aiSecs();return s<60?s+' s':Math.floor(s/60)+' m
 function aiWaitHint(){const s=aiSecs();return s<45?'Dit duurt meestal 10 à 40 seconden.':s<120?'Gemini is wat trager dan gewoonlijk. Even geduld: je kunt dit venster openlaten.':'Gemini is druk en het script probeert opnieuw. De app wacht tot 6 minuten.'}
 function aiTick(){const a=$('#ai-elapsed'),b=$('#ai-wait-hint');if(a)a.textContent=aiElapsedTxt();if(b)b.textContent=aiWaitHint()}
 A.aiMeal=()=>{aiReadForm();aiRepaint()};
+A.aiHerbFocus=d=>{aiReadForm();const n=String(d.n||'');const i=AIR.focus.indexOf(n);if(i>=0)AIR.focus.splice(i,1);else{if(AIR.focus.length>=3)throw new Error('Kies hoogstens 3 kruiden in de kijker.');AIR.focus.push(n)}aiRepaint()};
 A.aiMarkBeleg=d=>{const p=M.S.products[d.id];if(!p)return;M.saveProduct({id:p.id,use:'beleg'});toast('"'+p.name+'" geldt nu als broodbeleg en komt niet meer in avondgerechten. Terugzetten kan via Product bewerken.');aiRepaint()};
 A.aiClear=()=>{aiReadForm();AIR.results=[];AIR.saved={};AIR.err='';aiRepaint()};
 A.aiGo=async()=>{if(AIR.busy)return;aiReadForm();if(!aiPaired())throw new Error('Koppel eerst Google-synchronisatie (Instellingen › Google-synchronisatie).');
   if(!M.state().aiConsent){const c=$('#ai-consent');if(!c||!c.checked)throw new Error('Vink eerst aan dat je akkoord gaat dat je voorraadlijst naar Google Gemini gaat.');M.saveState({aiConsent:true})}
   if(typeof navigator!=='undefined'&&navigator.onLine===false)throw new Error('Je bent offline. AI-recepten hebben een internetverbinding nodig.');
-  const stock=aiStock();if(!stock.length)throw new Error('Je voorraad is leeg. Voeg eerst producten toe.');
+  const stock=aiStock();const herbs=aiHerbs();if(!stock.length&&!herbs.length)throw new Error('Je voorraad is leeg. Voeg eerst producten toe.');
+  const focusHerbs=AIR.herbs?AIR.focus.filter(n=>herbs.some(x=>x.name===n)).slice(0,3):[];
   const hh=M.household();const prev=AIR.results.map(r=>r.name);
   const exclude=prev.concat(AIR.exclude,Object.values(M.S.recipes).map(r=>r.name)).filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,40);
-  AIR.busy=true;AIR.err='';AIR.errCode='';AIR.t0=Date.now();clearInterval(AIR.timer);AIR.timer=setInterval(aiTick,1000);aiRepaint();
-  try{const j=await Sync.call('aiRecipes',{meal:AIR.meal,count:AIR.count,wish:(AIR.meal==='dessert'?(AI_DESSERT_WISH+(AIR.wish?' '+AIR.wish:'')):AIR.wish).slice(0,300),urgent:AIR.urgent,maxMissing:AIR.maxMissing,servings:aiServings(),kidsAges:hh.children.map(k=>k.age).filter(a=>a!=null),exclude,stock},null,AI_WAIT_MS);
+  AIR.busy=true;AIR.err='';AIR.errCode='';AIR.note='';AIR.t0=Date.now();clearInterval(AIR.timer);AIR.timer=setInterval(aiTick,1000);aiRepaint();
+  try{const j=await Sync.call('aiRecipes',{meal:AIR.meal,count:AIR.count,wish:(AIR.meal==='dessert'?(AI_DESSERT_WISH+(AIR.wish?' '+AIR.wish:'')):AIR.wish).slice(0,300),urgent:AIR.urgent,maxMissing:AIR.maxMissing,servings:aiServings(),kidsAges:hh.children.map(k=>k.age).filter(a=>a!=null),exclude,stock,herbs,herbMode:AIR.herbs,focusHerbs},null,AI_WAIT_MS);
+    if(herbs.length&&j.herbs==null)AIR.note='Je Google Apps Script is nog een oudere versie: je kruiden en specerijen gingen niet mee naar Gemini. Vervang Code.gs door versie 14 en maak een nieuwe versie van de implementatie.';
     const reqMeal=AIR.meal;const list=(j.recipes||[]).map((x,ix)=>aiToRecipe(Object.assign({},x,{reqMeal}),ix)).filter(r=>r.ing.length&&r.steps.length);if(!list.length)throw new Error('Gemini gaf geen bruikbaar recept terug. Probeer het opnieuw.');
     AIR.exclude=AIR.exclude.concat(prev).slice(-30);AIR.results=list;AIR.saved={};AIR.meta={model:j.model||'',used:j.used,max:j.max}}
   catch(e){AIR.errCode=e.code||'';const long=aiSecs()>=300;
@@ -3009,7 +3036,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.18 · 25-11-2026';
+const APP_VERSION='3.19 · 25-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
@@ -4025,7 +4052,7 @@ const _dash=VIEW_RENDER.dashboard;VIEW_RENDER.dashboard=function(){let h=demoBan
 /* ---------- Uitleg bij knoppen ----------
    Met de muis even aanwijzen (of met Tab erheen gaan) toont wat een knop doet. Tekst komt uit data-tip, de lijst hieronder,
    aria-label of title. Knoppen met alleen een icoon krijgen dezelfde tekst als label voor schermlezers. Uit te zetten bij Toegankelijkheid. */
-const ACT_TIPS={closeModal:'Venster sluiten (Esc)',discardLot:'Weggooien: haalt deze partij uit je voorraad en noteert het in je geschiedenis',
+const ACT_TIPS={closeModal:'Venster sluiten (Esc)',aiHerbFocus:'Gemini moet dit kruid zeker gebruiken. Nog eens klikken om het weg te halen',aiMarkBeleg:'Dit product is broodbeleg: niet meer gebruiken in warme gerechten',discardLot:'Weggooien: haalt deze partij uit je voorraad en noteert het in je geschiedenis',
   useLot:'Een deel gebruiken: je kiest hoeveel er af gaat',useUpLot:'Helemaal opgebruikt: haalt de partij uit je voorraad',useProduct:'Een deel gebruiken, eerst van de oudste partij',
   topUpLot:'Aanvullen: hoeveelheid bijtellen bij deze partij',addLotFor:'Nieuwe partij van dit product toevoegen',addLotScan:'Nieuwe partij van dit product toevoegen',
   editLot:'Partij bewerken: datum, hoeveelheid of plaats',moveLot:'Naar een andere opslagplaats verplaatsen',freezeLot:'Naar de diepvries verplaatsen',
