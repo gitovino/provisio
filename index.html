@@ -2302,30 +2302,66 @@ async function autoHealth(){if(AUTOH.running||!M||(typeof navigator!=='undefined
 const SR={status:'idle',q:'',items:[],page:1,count:0,scope:'be',error:'',fallback:false,dom:''};
 const SR_PAGE=24;
 function srUrl(q,page,be,dom){return 'https://'+domDb(dom).host+'/cgi/search.pl?action=process&json=1&search_simple=1&search_terms='+encodeURIComponent(q)+(be?'&tagtype_0=countries&tag_contains_0=contains&tag_0=en%3Abelgium':'')+'&sort_by=unique_scans_n&page_size='+SR_PAGE+'&page='+page+'&fields=code,'+OFF_FIELDS}
-async function offNameSearch(q,page,be,dom){const r=await netGet(srUrl(q,page,be,dom),{ms:12000,relayMs:25000,noRetry:true,label:domDb(dom).name});
-  if(r.status!=='ok'){if(r.http===429||/te veel/.test(r.error||''))throw new Error('te veel zoekopdrachten na elkaar — wacht een minuutje');if(r.status==='notfound')return {count:0,products:[]};throw new Error(r.error||'netwerkfout')}
-  const j=r.json||{};return {count:Number(j.count)||0,products:(j.products||[]).filter(p=>p&&p.code)}}
+/* Zoeken op naam heeft drie wegen, na elkaar:
+   1. Voeding: de nieuwe zoekdienst search.openfoodfacts.org (aparte servers, snel). 2. Het klassieke zoekadres cgi/search.pl,
+   bij 5xx na 2,5 s nog één keer. Beide eerst rechtstreeks, daarna via je Google-script. 3. Lukt niets, dan bewaarde resultaten van een eerdere zoekopdracht en je eigen producten. */
+const SAL_FIELDS='code,product_name,generic_name,brands,quantity,product_quantity,product_quantity_unit,nutriscore_grade,nova_group,ecoscore_grade,categories_tags,labels_tags,additives_tags,countries_tags,image_front_small_url,image_front_url';
+function salUrl(q,page,be){return 'https://search.openfoodfacts.org/search?q='+encodeURIComponent(q+(be?' countries_tags:"en:belgium"':''))+'&langs=nl,fr,en&page_size='+SR_PAGE+'&page='+page+'&fields='+SAL_FIELDS}
+function salNorm(x){const pick=v=>{if(v==null)return '';if(typeof v==='string'||typeof v==='number')return String(v);if(Array.isArray(v))return v.map(pick).filter(Boolean).join(', ');
+    if(typeof v==='object')return pick(v.nl||v.fr||v.en||v.main||Object.values(v).find(y=>typeof y==='string')||'');return ''};
+  const arr=v=>Array.isArray(v)?v.map(String):(typeof v==='string'&&v?v.split(',').map(s=>s.trim()):[]);const pn=x.product_name;
+  const o={code:String(x.code||x._id||'').replace(/\D/g,''),product_name:pick(pn),generic_name:pick(x.generic_name),brands:pick(x.brands),quantity:pick(x.quantity),
+    nutriscore_grade:pick(x.nutriscore_grade).toLowerCase(),ecoscore_grade:pick(x.ecoscore_grade).toLowerCase(),image_front_small_url:pick(x.image_front_small_url)||pick(x.image_front_url),
+    categories_tags:arr(x.categories_tags),labels_tags:arr(x.labels_tags),additives_tags:arr(x.additives_tags),countries_tags:arr(x.countries_tags)};
+  if(pn&&typeof pn==='object'&&!Array.isArray(pn)){if(pn.nl)o.product_name_nl=String(pn.nl);if(pn.fr)o.product_name_fr=String(pn.fr)}
+  if(Number(x.nova_group))o.nova_group=Number(x.nova_group);if(Number(x.product_quantity))o.product_quantity=Number(x.product_quantity);if(x.product_quantity_unit)o.product_quantity_unit=pick(x.product_quantity_unit);
+  Object.keys(o).forEach(k=>{if(o[k]===''||(Array.isArray(o[k])&&!o[k].length))delete o[k]});return o}
+function srErr(r,label){const st=r&&r.http;const e=new Error(st===429||/te veel/.test(r&&r.error||'')?'te veel zoekopdrachten na elkaar — wacht een minuutje':st>=500?label+' is tijdelijk overbelast (HTTP '+st+')':(r&&r.error)||'netwerkfout');e.http=st;return e}
+async function offNameSearch(q,page,be,dom){const db=domDb(dom);let firstErr=null;
+  if(db.host==='world.openfoodfacts.org'){const r=await netGet(salUrl(q,page,be),{ms:9000,relayMs:20000,noRetry:true,quiet:true,label:'Open Food Facts'});
+    if(r.status==='ok'&&r.json&&Array.isArray(r.json.hits)&&!(Array.isArray(r.json.errors)&&r.json.errors.length)){const ps=r.json.hits.map(salNorm).filter(o=>o.code&&o.product_name);
+      if(ps.length||Number(r.json.count)===0)return {count:Number(r.json.count)||ps.length,products:ps,via:'sal'}}
+    firstErr=r.status==='ok'?null:r}
+  const url=srUrl(q,page,be,dom);let r=await netGet(url,{ms:12000,relayMs:25000,noRetry:true,quiet:!!firstErr,label:db.name});
+  if(r.status==='error'&&r.http>=500){await new Promise(z=>setTimeout(z,2500));const r2=await netDirect(url,12000);if(r2.status!=='error'||(r2.http&&r2.http<500))r=r2}
+  if(r.status==='notfound')return {count:0,products:[],via:'legacy'};
+  if(r.status!=='ok')throw srErr(r,db.name);
+  const j=r.json||{};return {count:Number(j.count)||0,products:(j.products||[]).filter(p=>p&&p.code),via:'legacy'}}
+/* Bewaarde zoekresultaten (7 dagen, max. 12 zoekopdrachten) en je eigen producten als laatste reserve. */
+const SRC_KEY='srCache';
+function srcKey(q,dom){return (dom||'keuken')+'|'+norm(q)}
+function srcSave(q,dom,items){if(!items.length)return;try{const c=LS.get(SRC_KEY,{})||{};c[srcKey(q,dom)]={at:Date.now(),items:items.slice(0,SR_PAGE).filter(x=>!x.own)};
+  const ks=Object.keys(c).sort((a,b)=>c[b].at-c[a].at);ks.slice(12).forEach(k=>delete c[k]);LS.set(SRC_KEY,c)}catch(e){}}
+function srcGet(q,dom){try{const c=(LS.get(SRC_KEY,{})||{})[srcKey(q,dom)];return c&&Date.now()-c.at<7*864e5?c:null}catch(e){return null}}
+function srOwn(q,dom){const t=norm(q).split(/\s+/).filter(w=>w.length>1);if(!t.length)return [];
+  return M.products().filter(p=>M.productDomain(p)===(dom||'keuken')).filter(p=>{const s=norm((p.name||'')+' '+(p.brand||'')+' '+(p.kind||''));return t.every(w=>s.indexOf(w)>=0)}).slice(0,24)
+    .map(p=>({code:p.barcode||('own:'+p.id),pid:p.id,own:true,name:p.name,brand:p.brand||'',photo:p.photo||'',category:p.category,sub:p.sub,quantityLabel:'',score:null,nutri:p.health&&p.health.nutri}))}
 function srItem(o,dom){dom=dom===undefined?UI.dom:dom;const code=String(o.code);const m=mapOFF(code,{status:1,product:o});if(!m||!m.name)return null;
   if(['badkamer','huishouden','medicijnen'].includes(dom)){const c=careCat(dom,m.name,o.categories_tags);if(c)Object.assign(m,{category:c.category,sub:c.sub,domain:M.catDomain(c.category)||dom});return Object.assign(m,{code,score:null,nutri:null,source:domDb(dom).name})}
   m.health=healthFromOFF(o);
   const e=estimateScore(m.health,hSet().addRisk);return Object.assign(m,{code,score:e?e.score:null,nutri:m.health&&m.health.nutri})}
-async function runSearch(more){const q=SR.q;if(!more){SR.items=[];SR.page=1;SR.fallback=false}SR.status='busy';SR.error='';paintSearch();
+async function runSearch(more){const q=SR.q;if(!more){SR.items=[];SR.page=1;SR.fallback=false;SR.offline=null;SR.via=''}SR.status='busy';SR.error='';paintSearch();
   try{const be=SR.scope==='be'&&!SR.fallback;SR.dom=UI.dom;let r=await offNameSearch(q,SR.page,be,SR.dom);
     if(!more&&be&&!r.products.length){SR.fallback=true;r=await offNameSearch(q,1,false,SR.dom)}
-    const seen=new Set(SR.items.map(x=>x.code));r.products.forEach(o=>{const it=srItem(o,SR.dom);if(it&&!seen.has(it.code)){seen.add(it.code);SR.items.push(it)}});
-    SR.count=r.count;SR.status=SR.items.length?'ok':'empty'}
-  catch(e){SR.status='error';SR.error=e.message}
+    const seen=new Set(SR.items.map(x=>x.code));r.products.forEach(o=>{const it=srItem(o,SR.dom);if(it&&!seen.has(it.code)){if(r.via==='sal')it.partial=true;seen.add(it.code);SR.items.push(it)}});
+    SR.via=SR.via||r.via;SR.count=r.count;SR.status=SR.items.length?'ok':'empty';if(!more)srcSave(q,SR.dom,SR.items)}
+  catch(e){SR.error=e.message;
+    if(!more){const c=srcGet(q,UI.dom);const own=srOwn(q,UI.dom);const seen=new Set();const items=(c?c.items:[]).concat(own).filter(x=>!seen.has(x.code)&&seen.add(x.code));
+      if(items.length){SR.items=items;SR.count=items.length;SR.status='ok';SR.offline={at:c&&c.at,own:own.length,cached:c?c.items.length:0};paintSearch();return}}
+    SR.status='error'}
   paintSearch()}
 function paintSearch(){const el=$('#sr-results');if(el)el.innerHTML=searchResults();else if(UI.view==='scanner')render()}
 function searchResults(){
   if(SR.status==='idle')return '<div class="empty" style="padding:16px">Typ een productnaam en druk op <b>Zoeken</b>.<br><span class="small">Bijvoorbeeld: '+domDb().ex.map(x=>'<i>'+esc(x)+'</i>').join(', ')+'.</span></div>';
   if(SR.status==='busy'&&!SR.items.length)return '<div class="loading" style="min-height:120px">Zoeken in '+domDb().name+'…</div>';
-  if(SR.status==='error'&&!SR.items.length)return '<div class="note warn">'+domDb().name+' niet bereikbaar ('+esc(SR.error)+'). Controleer je internetverbinding en probeer opnieuw. In een afgeschermd voorbeeldvenster kan externe toegang geblokkeerd zijn.</div>';
+  if(SR.status==='error'&&!SR.items.length){const busy=/overbelast|HTTP 5\d\d|te veel/.test(SR.error);return '<div class="note warn" role="alert" data-glean-id="search-error">'+(busy?esc(SR.error.charAt(0).toUpperCase()+SR.error.slice(1))+'. Dat ligt niet aan je internet; de databank krijgt gewoon te veel vragen. Probeer het over een paar minuten opnieuw.':domDb().name+' niet bereikbaar ('+esc(SR.error)+'). Controleer je internetverbinding en probeer opnieuw.')+'<div class="small" style="margin-top:4px">Ondertussen: scan de barcode (die opzoeking heeft meer reserves), fotografeer de verpakking of voeg het product manueel toe.</div></div><div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="srGo">↻ Opnieuw zoeken</button><button type="button" class="btn" data-act="srManual">✍️ Manueel toevoegen</button></div>'}
   if(SR.status==='empty')return '<div class="note">Niets gevonden voor “'+esc(SR.q)+'”. Probeer minder of andere woorden (bv. alleen merk + productsoort), of voeg het product manueel toe.</div><div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="srManual">✍️ Manueel toevoegen</button></div>';
   let h=SR.fallback?'<div class="note" style="margin-bottom:8px">Geen resultaten bij producten verkocht in België — hieronder resultaten van alle landen.</div>':'';
-  h+='<div class="small muted" style="margin-bottom:6px">'+SR.count+' resultaten'+(SR.scope==='be'&&!SR.fallback?' in België':'')+' · meest gescand eerst</div><div class="list" data-glean-id="search-results">';
+  if(SR.offline){const o=SR.offline;h+='<div class="note warn" role="status" data-glean-id="search-offline" style="margin-bottom:8px">⚠️ '+esc(SR.error.charAt(0).toUpperCase()+SR.error.slice(1))+'. Hieronder '+(o.cached?'je bewaarde resultaten van '+esc(new Date(o.at).toLocaleDateString('nl-BE'))+(o.own?' en ':''):'')+(o.own?'je eigen producten die passen':'')+'. <button type="button" class="btn sm" data-act="srGo">↻ Opnieuw online zoeken</button></div>'}
+  else h+='<div class="small muted" style="margin-bottom:6px">'+SR.count+' resultaten'+(SR.scope==='be'&&!SR.fallback?' in België':'')+' · '+(SR.via==='sal'?'beste overeenkomst eerst':'meest gescand eerst')+'</div>';
+  h+='<div class="list" data-glean-id="search-results">';
   h+=SR.items.map(it=>{const b=it.score!=null?scoreBand(it.score):null;
-    return '<div class="li" data-glean-id="sr-'+esc(it.code)+'"><div class="thumb">'+(it.photo?'<img src="'+esc(it.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(it.name)+(it.brand?' <span class="muted" style="font-weight:400">· '+esc(it.brand)+'</span>':'')+'</div><div class="sub-t">'+(it.quantityLabel?esc(it.quantityLabel)+' · ':'')+(b?'<span class="ys ys-'+b.cls+' est">≈ '+it.score+'</span> ':'')+(it.nutri?nutriBadge(it.nutri):'')+(M.findProductByBarcode(it.code)?' · <b>al in je producten</b>':'')+'</div></div><div class="acts"><button type="button" class="btn sm primary" data-act="srPick" data-code="'+esc(it.code)+'">+ Toevoegen</button><a class="btn sm ghost" href="https://world.openfoodfacts.org/product/'+encodeURIComponent(it.code)+'" target="_blank" rel="noopener">Info</a></div></div>'}).join('');
+    return '<div class="li" data-glean-id="sr-'+esc(it.code)+'"><div class="thumb">'+(it.photo?'<img src="'+esc(it.photo)+'" alt="" loading="lazy" onerror="this.remove()">':'🛒')+'</div><div class="grow" style="min-width:0"><div class="main-t">'+esc(it.name)+(it.brand?' <span class="muted" style="font-weight:400">· '+esc(it.brand)+'</span>':'')+'</div><div class="sub-t">'+(it.quantityLabel?esc(it.quantityLabel)+' · ':'')+(b?'<span class="ys ys-'+b.cls+' est">≈ '+it.score+'</span> ':'')+(it.nutri?nutriBadge(it.nutri):'')+(it.own?' · <b>uit je eigen producten</b>':M.findProductByBarcode(it.code)?' · <b>al in je producten</b>':'')+'</div></div><div class="acts"><button type="button" class="btn sm primary" data-act="srPick" data-code="'+esc(it.code)+'">+ Toevoegen</button>'+(it.own?'':'<a class="btn sm ghost" href="https://'+esc(domDb(SR.dom).host)+'/product/'+encodeURIComponent(it.code)+'" target="_blank" rel="noopener">Info</a>')+'</div></div>'}).join('');
   h+='</div>';
   if(SR.status==='busy')h+='<div class="loading" style="min-height:60px">Meer laden…</div>';
   else if(SR.status==='error')h+='<div class="note warn" style="margin-top:8px">Meer laden lukte niet ('+esc(SR.error)+').</div>';
@@ -2342,7 +2378,10 @@ A.srGo=()=>{const el=$('#sr-q');const q=((el&&el.value)||'').trim().replace(/\s+
 A.srMore=()=>{if(SR.status==='busy')return;SR.page++;return runSearch(true)};
 A.srScope=(d,el)=>{SR.scope=el.checked?'be':'all';if(SR.q&&SR.status!=='busy')return runSearch(false)};
 A.srManual=()=>openConfirm({source:'manueel',name:SR.q},'scanner');
-A.srPick=d=>{const it=SR.items.find(x=>x.code===d.code);if(!it)return;const local=M.findProductByBarcode(it.code);
+A.srPick=async d=>{const it=SR.items.find(x=>x.code===d.code);if(!it)return;
+  if(it.own){const op=M.S.products[it.pid];if(op)openConfirm(Object.assign(prefFromProduct(op),{source:'eigen producten',info:'Dit product heb je al — er wordt een nieuwe partij toegevoegd.'}));return}
+  if(it.partial&&!it.full&&(SR.dom||'keuken')==='keuken'){try{const r=await fetchOFF(it.code,{ms:6000,relayMs:12000,noRetry:true,quiet:true});if(r.status==='ok'){const f=r.data;['photo','quantityLabel','qty','unit','health','category','sub'].forEach(k=>{if(f[k]&&(!it[k]||k==='health'||k==='qty'||k==='unit'))it[k]=f[k]})}}catch(e){}it.full=true}
+  const local=M.findProductByBarcode(it.code);
   if(local){if(!local.health&&it.health)quietSave(local.id,{health:it.health,photo:local.photo||it.photo||''});openConfirm(Object.assign(prefFromProduct(local),{barcode:it.code,source:'online zoeken',info:'Dit product heb je al — er wordt een nieuwe partij toegevoegd.'}));return}
   const same=M.findProductByName(it.name,it.brand);
   openConfirm(Object.assign({},same?prefFromProduct(same):{},{name:it.name,brand:it.brand,category:it.category,sub:it.sub,barcode:it.code,photo:it.photo,qty:it.qty,unit:it.unit,health:it.health,source:it.source||'Open Food Facts',
@@ -2965,7 +3004,7 @@ function parsePairCode(code){code=String(code||'').trim().replace(/\s+/g,'');if(
   let b=code.slice(5).replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';let o;try{o=JSON.parse(decodeURIComponent(escape(atob(b))))}catch(e){throw new Error('De koppelcode is onvolledig. Kopieer hem opnieuw, volledig.')}
   if(!o||!o.k||!/^https:\/\/script\.google(usercontent)?\.com\//.test(o.u||''))throw new Error('De koppelcode bevat geen geldig Google-adres.');return {url:o.u,key:o.k}}
 /* Onderscheid: Google bereikbaar maar weigert (toegang/URL) ↔ verbinding geblokkeerd (Glean-venster, adblocker, bedrijfsnetwerk) */
-const APP_VERSION='3.16 · 25-11-2026';
+const APP_VERSION='3.17 · 25-11-2026';
 async function syncDiagnose(url){const inGlean=!!(typeof window!=='undefined'&&window.GleanBridge);
   if(inGlean)return 'Kan Google niet bereiken: de app in Glean blokkeert externe verbindingen. Koppel in de web-app (GitHub Pages) in je gewone browser.';
   let reach=false;try{const ctl=typeof AbortController!=='undefined'?new AbortController():null;const to=setTimeout(()=>ctl&&ctl.abort(),10000);await fetch(url,{method:'GET',mode:'no-cors',cache:'no-store',signal:ctl?ctl.signal:undefined});clearTimeout(to);reach=true}catch(e){}
