@@ -1,23 +1,33 @@
-const CACHE_NAME = 'leesmaatje-quiz-v9';
-const LEGACY_CACHES = ['leesmaatje-finale-v7', 'leesmaatje-quiz-v8'];
-self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(['./', './index.html', './manifest.json'].map(url => new Request(url, { cache: 'reload' })));
-    await self.skipWaiting();
-  })());
+/* Provisio service worker — maakt de app installeerbaar en offline bruikbaar.
+   - App-pagina: eerst netwerk (zo krijg je updates meteen), offline uit de cache.
+   - Lettertypen en bibliotheken (Google Fonts, jsDelivr): uit de cache, anders netwerk.
+   - Synchronisatie (Google) en productopzoekingen (Open Food Facts) gaan altijd rechtstreeks.
+   - De geneesmiddelenlijst (data/*.json) gaat altijd via het netwerk: de app bewaart zelf een kopie op het toestel. */
+const VERSION = 'provisio-v22';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
+const CDN = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdn\.jsdelivr\.net|tfhub\.dev|www\.kaggle\.com|storage\.googleapis\.com)\//;
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    await Promise.all(LEGACY_CACHES.map(name => caches.delete(name)));
-    await self.clients.claim();
-  })());
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k.startsWith('provisio-')).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
-  event.respondWith(fetch(request).catch(async () => {
-    const cache = await caches.open(CACHE_NAME);
-    return (await cache.match(request)) || (request.mode === 'navigate' && await cache.match('./index.html')) || Response.error();
-  }));
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin === location.origin) {
+    if (url.pathname.includes('/data/') && url.pathname.endsWith('.json')) return;
+    if (req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('.html')) {
+      e.respondWith(fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); } return res; })
+        .catch(() => caches.match('./index.html').then(r => r || caches.match('./'))));
+      return;
+    }
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })));
+    return;
+  }
+  if (CDN.test(req.url)) {
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })));
+  }
 });
